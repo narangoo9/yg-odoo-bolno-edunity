@@ -1,0 +1,112 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_smoke_test:
+        description: "Skip smoke test?"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: CI Gate Check
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    steps:
+      - run: echo "CI passed — proceeding to deploy"
+
+  migrate:
+    name: Database Migration
+    runs-on: ubuntu-latest
+    needs: gate
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: npm }
+      - name: Restore or install deps
+        run: |
+          npm ci --ignore-scripts 2>/dev/null || npm ci
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: npx prisma migrate deploy
+      - name: Verify migration status
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: npx prisma migrate status
+
+  deploy:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    needs: migrate
+    environment: production
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install --global vercel@latest
+      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> $GITHUB_OUTPUT
+
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event.inputs.skip_smoke_test != 'true'
+    steps:
+      - name: Wait for stabilization
+        run: sleep 15
+      - name: Health + critical routes
+        run: |
+          URL="${{ needs.deploy.outputs.url }}"
+          FAILED=0
+          check() {
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 "$URL$1")
+            [ "$STATUS" = "$2" ] && echo "OK $1" || { echo "FAIL $1 -> $STATUS (expected $2)"; FAILED=1; }
+          }
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 10 "$URL/api/health")
+            [ "$STATUS" = "200" ] && break
+            echo "Health check attempt $i failed ($STATUS), retrying..."
+            sleep 5
+          done
+          check "/" "200"
+          check "/courses" "200"
+          check "/login" "200"
+          check "/api/health" "200"
+          [ $FAILED -eq 1 ] && exit 1 || echo "All checks passed"
+
+  notify:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [migrate, deploy, smoke-test]
+    if: failure()
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Deploy FAILED - ${context.sha.substring(0,7)}`,
+              body: `**Failed at:** migrate / deploy / smoke-test\n\n[View run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              labels: ['bug', 'deploy', 'priority:high'],
+            });

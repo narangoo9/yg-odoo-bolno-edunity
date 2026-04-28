@@ -1,0 +1,1332 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // NeonDB pooled connection-д DIRECT_URL шаардлагатай (migrate зориулсан)
+  // Self-hosted Postgres-т энэ мөрийг устгаж болно.
+  // Хэрэв та local development-д DIRECT_URL ашиглахгүй бол энэ мөрийг leave commented.
+  // directUrl = env("DIRECT_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ORG_ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  ALL_LEVELS
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  UNDER_REVIEW
+}
+
+enum LessonType {
+  VIDEO
+  TEXT
+  PDF
+  ASSIGNMENT
+  QUIZ
+  LIVE_SESSION
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  COMPLETED
+}
+
+enum QuizQuestionType {
+  MULTIPLE_CHOICE
+  SINGLE_CHOICE
+  TRUE_FALSE
+  SHORT_ANSWER
+  FILE_UPLOAD
+}
+
+enum QuizAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  GRADED
+  TIMED_OUT
+}
+
+enum SubscriptionPlan {
+  FREE
+  STUDENT
+  INSTRUCTOR
+  ORGANIZATION
+  ENTERPRISE
+  // Platform feature tiers (Standard/Premium/Pro replace role-based plans going forward)
+  BASIC
+  STANDARD
+  PREMIUM
+  PRO
+}
+
+enum ProgramStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+// Phase 1: multi-tenant
+enum OrgMemberRole {
+  OWNER
+  ADMIN
+  INSTRUCTOR
+  VIEWER
+}
+
+enum OrgMemberStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// Phase 2: learning domain
+enum CapstoneStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  GRADED
+  REJECTED
+}
+
+enum CommentContentType {
+  LESSON
+  COURSE
+  CAPSTONE
+  PROGRAM
+}
+
+// Phase 3: commerce
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+// Phase 4: engagement
+enum TodoPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ReactionContentType {
+  COMMENT
+  LESSON
+  COURSE
+  MESSAGE
+  CAPSTONE
+}
+
+// Phase 4: social
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}
+
+// Phase 5: AI
+enum AiMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+  TRIALING
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum NotificationType {
+  ENROLLMENT_SUCCESS
+  COURSE_PUBLISHED
+  QUIZ_RESULT
+  CERTIFICATE_READY
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  COURSE_REMINDER
+  LIVE_CLASS_REMINDER
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+// ─── CORE MODELS ──────────────────────────────────────────────────────────────
+
+model User {
+  id                String     @id @default(cuid())
+  name              String
+  email             String     @unique
+  emailVerified     DateTime?
+  passwordHash      String?
+  avatarUrl         String?
+  bio               String?
+  role              UserRole   @default(STUDENT)
+  status            UserStatus @default(PENDING_VERIFICATION)
+  organizationId    String?
+  stripeCustomerId  String?    @unique
+  lastLoginAt       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // ─── Gamification ────────────────────────────────────────────
+  xp                Int        @default(0)
+  coins             Int        @default(0)
+  streak            Int        @default(0)
+  level             Int        @default(1)
+  lastStreakAt       DateTime?
+
+  // Relations
+  organization      Organization?  @relation("OrgMembers", fields: [organizationId], references: [id])
+  ownedOrg          Organization?  @relation("OrgOwner")
+  coursesCreated    Course[]       @relation("CourseInstructor")
+  enrollments       Enrollment[]
+  progress          Progress[]
+  quizAttempts      QuizAttempt[]
+  certificates      Certificate[]
+  subscription      Subscription?
+  payments          Payment[]
+  notifications     Notification[]
+  reviews           Review[]
+  auditLogs         AuditLog[]
+  sessions          Session[]
+  accounts          Account[]
+  verificationTokens VerificationToken[]
+  // Gamification relations
+  badges               UserBadge[]
+  xpLogs               XpLog[]
+  leaderboard          LeaderboardEntry?
+  // Wallet
+  walletCredits        WalletCredit[]
+  xpConversions        XpConversion[]
+  // Programs
+  programEnrollments   ProgramEnrollment[]
+
+  // Wallet balance (denormalized, maintained by WalletCredit transactions)
+  walletBalance        Decimal  @default(0) @db.Decimal(10,4)
+  // XP redemption cap: max credits earned via XP conversion per user lifetime
+  xpCreditsEarned      Decimal  @default(0) @db.Decimal(10,4)
+
+  // Phase 1: org memberships
+  orgMemberships       OrganizationMember[]
+  // Phase 2: content interactions
+  comments             Comment[]
+  capstones            Capstone[]
+  capstoneReviews      CapstoneReview[]
+  // Phase 3: orders
+  orders               Order[]
+  // Phase 4: engagement
+  todos                TodoItem[]
+  reactions            Reaction[]
+  sentMessages         DirectMessage[] @relation("MessageSender")
+  receivedMessages     DirectMessage[] @relation("MessageRecipient")
+  // Phase 4: referrals + friends
+  referralCode         String?  @unique
+  referredById         String?
+  referrals            Referral[]      @relation("ReferralReferrer")
+  referredBy           Referral?       @relation("ReferralReferred")
+  friendshipsInitiated Friendship[]    @relation("FriendshipRequester")
+  friendshipsReceived  Friendship[]    @relation("FriendshipAddressee")
+  // Phase 5: AI
+  aiSessions           AiSession[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  type      String   // email_verify | password_reset
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_tokens")
+}
+
+// ─── ORGANIZATION (MULTI-TENANT) ──────────────────────────────────────────────
+
+model Organization {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  description    String?
+  logoUrl        String?
+  website        String?
+  ownerId        String   @unique
+  plan           SubscriptionPlan @default(FREE)
+  isActive       Boolean  @default(true)
+  settings       Json?    // custom branding, feature flags, limits
+  // Commission: platform takes this % of every course/program sale under this org (0-100)
+  commissionRate Decimal  @default(20) @db.Decimal(5,2)
+  payoutSettings Json?    // bank account, payout schedule, etc.
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  owner       User                 @relation("OrgOwner", fields: [ownerId], references: [id])
+  members     User[]               @relation("OrgMembers")
+  courses     Course[]
+  invites     OrgInvite[]
+  programs    Program[]
+  payouts     OrgPayout[]
+  certificates Certificate[]
+  orgMembers  OrganizationMember[]
+
+  @@map("organizations")
+}
+
+model OrgInvite {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String
+  role           UserRole @default(STUDENT)
+  token          String   @unique
+  invitedBy      String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("org_invites")
+}
+
+// ─── COURSE MODULE ────────────────────────────────────────────────────────────
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  iconUrl     String?
+  parentId    String?
+  createdAt   DateTime @default(now())
+
+  parent   Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children Category[] @relation("SubCategories")
+  courses  Course[]
+
+  @@map("categories")
+}
+
+model Course {
+  id               String       @id @default(cuid())
+  organizationId   String?
+  instructorId     String
+  categoryId       String?
+  title            String
+  slug             String       @unique
+  description      String       @db.Text
+  shortDescription String?
+  thumbnailUrl     String?
+  previewVideoUrl  String?
+  level            CourseLevel  @default(ALL_LEVELS)
+  language         String       @default("mn")
+  price            Decimal      @default(0) @db.Decimal(10,2)
+  discountPrice    Decimal?     @db.Decimal(10,2)
+  currency         String       @default("MNT")
+  duration         Int?         // minutes
+  status           CourseStatus @default(DRAFT)
+  tags             String[]
+  prerequisites    String[]
+  learningOutcomes String[]
+  isFeatured       Boolean      @default(false)
+  averageRating    Float        @default(0)
+  reviewCount      Int          @default(0)
+  publishedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Relations
+  organization     Organization?  @relation(fields: [organizationId], references: [id])
+  instructor       User           @relation("CourseInstructor", fields: [instructorId], references: [id])
+  category         Category?      @relation(fields: [categoryId], references: [id])
+  modules          CourseModule[]
+  enrollments      Enrollment[]
+  quizzes          Quiz[]
+  certificates     Certificate[]
+  reviews          Review[]
+  programCourses   ProgramCourse[]
+  capstones        Capstone[]
+  orderItems       OrderItem[]
+
+  @@index([status, isFeatured])
+  @@index([instructorId])
+  @@index([categoryId])
+  @@map("courses")
+}
+
+model CourseModule {
+  id          String   @id @default(cuid())
+  courseId    String
+  title       String
+  description String?
+  orderIndex  Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons  Lesson[]
+
+  @@map("course_modules")
+}
+
+model Lesson {
+  id             String     @id @default(cuid())
+  moduleId       String
+  title          String
+  description    String?    @db.Text
+  type           LessonType
+  contentUrl     String?
+  contentBody    String?    @db.Text
+  duration       Int?       // seconds
+  orderIndex     Int
+  isFree         Boolean    @default(false)
+  isLocked       Boolean    @default(false)
+  dripDays       Int?       // unlock after N days from enrollment
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  module     CourseModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  resources  LessonResource[]
+  progress   Progress[]
+  quiz       Quiz?
+
+  @@map("lessons")
+}
+
+model LessonResource {
+  id        String   @id @default(cuid())
+  lessonId  String
+  name      String
+  url       String
+  size      Int?
+  type      String
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@map("lesson_resources")
+}
+
+// ─── ENROLLMENT & PROGRESS ────────────────────────────────────────────────────
+
+model Enrollment {
+  id          String           @id @default(cuid())
+  studentId   String
+  courseId    String
+  status      EnrollmentStatus @default(ACTIVE)
+  enrolledAt  DateTime         @default(now())
+  expiresAt   DateTime?
+  completedAt DateTime?
+  source      String?          // direct | invite | organization | gift
+
+  student     User     @relation(fields: [studentId], references: [id])
+  course      Course   @relation(fields: [courseId], references: [id])
+  progress    Progress[]
+
+  @@unique([studentId, courseId])
+  @@index([studentId, status])
+  @@index([courseId])
+  @@map("enrollments")
+}
+
+model Progress {
+  id             String    @id @default(cuid())
+  studentId      String
+  courseId       String
+  lessonId       String
+  enrollmentId   String?
+  isCompleted    Boolean   @default(false)
+  watchedSeconds Int       @default(0)
+  completedAt    DateTime?
+  lastAccessedAt DateTime  @default(now())
+
+  student    User       @relation(fields: [studentId], references: [id])
+  lesson     Lesson     @relation(fields: [lessonId], references: [id])
+  enrollment Enrollment? @relation(fields: [enrollmentId], references: [id])
+
+  @@unique([studentId, lessonId])
+  @@index([studentId, courseId])
+  @@index([studentId, courseId, isCompleted])
+  @@index([lessonId])
+  @@map("progress")
+}
+
+// ─── QUIZ / ASSESSMENT ────────────────────────────────────────────────────────
+
+model Quiz {
+  id           String   @id @default(cuid())
+  courseId     String
+  lessonId     String?  @unique
+  title        String
+  description  String?
+  timeLimit    Int?     // minutes
+  passingScore Int      @default(70)
+  maxAttempts  Int      @default(3)
+  randomOrder  Boolean  @default(false)
+  showResult   Boolean  @default(true) // instant or delayed
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  course    Course       @relation(fields: [courseId], references: [id])
+  lesson    Lesson?      @relation(fields: [lessonId], references: [id])
+  questions Question[]
+  attempts  QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model Question {
+  id            String           @id @default(cuid())
+  quizId        String
+  type          QuizQuestionType
+  text          String           @db.Text
+  explanation   String?          @db.Text
+  points        Int              @default(1)
+  orderIndex    Int
+  mediaUrl      String?
+  createdAt     DateTime         @default(now())
+
+  quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options QuestionOption[]
+  answers QuizAnswer[]
+
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String  @id @default(cuid())
+  questionId String
+  text       String
+  isCorrect  Boolean @default(false)
+  orderIndex Int
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("question_options")
+}
+
+model QuizAttempt {
+  id          String            @id @default(cuid())
+  quizId      String
+  studentId   String
+  score       Float?
+  maxScore    Float?
+  status      QuizAttemptStatus @default(IN_PROGRESS)
+  startedAt   DateTime          @default(now())
+  submittedAt DateTime?
+  timeTaken   Int?              // seconds
+
+  quiz     Quiz         @relation(fields: [quizId], references: [id])
+  student  User         @relation(fields: [studentId], references: [id])
+  answers  QuizAnswer[]
+
+  @@map("quiz_attempts")
+}
+
+model QuizAnswer {
+  id          String  @id @default(cuid())
+  attemptId   String
+  questionId  String
+  selectedIds String[] // option ids for choice questions
+  textAnswer  String?
+  fileUrl     String?
+  isCorrect   Boolean?
+  pointsEarned Float?
+
+  attempt  QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id])
+
+  @@map("quiz_answers")
+}
+
+// ─── PROGRAM / TRACK (org-branded learning paths) ───────────────────────────
+
+model Program {
+  id             String        @id @default(cuid())
+  organizationId String
+  title          String
+  slug           String        @unique
+  description    String?       @db.Text
+  thumbnailUrl   String?
+  status         ProgramStatus @default(DRAFT)
+  // Certificate template fields
+  certificateTitle       String?
+  certificateDescription String?
+  // Sequence enforcement: must complete courses in order?
+  isOrdered      Boolean       @default(false)
+  publishedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization  Organization        @relation(fields: [organizationId], references: [id])
+  courses       ProgramCourse[]
+  enrollments   ProgramEnrollment[]
+  certificates  Certificate[]
+  capstones     Capstone[]
+  orderItems    OrderItem[]
+
+  @@index([organizationId, status])
+  @@map("programs")
+}
+
+model ProgramCourse {
+  id         String  @id @default(cuid())
+  programId  String
+  courseId   String
+  orderIndex Int     @default(0)
+  isRequired Boolean @default(true)
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, courseId])
+  @@map("program_courses")
+}
+
+model ProgramEnrollment {
+  id          String           @id @default(cuid())
+  studentId   String
+  programId   String
+  status      EnrollmentStatus @default(ACTIVE)
+  enrolledAt  DateTime         @default(now())
+  completedAt DateTime?
+  source      String?          // direct | invite | organization
+
+  student  User        @relation(fields: [studentId], references: [id])
+  program  Program     @relation(fields: [programId], references: [id])
+  certificate Certificate?
+
+  @@unique([studentId, programId])
+  @@index([studentId, status])
+  @@map("program_enrollments")
+}
+
+// ─── CERTIFICATE ──────────────────────────────────────────────────────────────
+
+model Certificate {
+  id               String   @id @default(cuid())
+  studentId        String
+  // Org-issued certificates store organizationId; standalone course certificates may not.
+  organizationId   String?
+  programId        String?
+  courseId         String?
+  programEnrollmentId String? @unique
+  certificateNo    String   @unique
+  verificationCode String   @unique
+  pdfUrl           String?
+  issuedAt         DateTime @default(now())
+  expiresAt        DateTime?
+  metadata         Json?
+
+  student           User               @relation(fields: [studentId], references: [id])
+  organization      Organization?      @relation(fields: [organizationId], references: [id])
+  program           Program?           @relation(fields: [programId], references: [id])
+  course            Course?            @relation(fields: [courseId], references: [id])
+  programEnrollment ProgramEnrollment? @relation(fields: [programEnrollmentId], references: [id])
+
+  @@unique([studentId, programId])
+  @@index([studentId])
+  @@map("certificates")
+}
+
+// ─── SUBSCRIPTION & PAYMENT ───────────────────────────────────────────────────
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  plan                 SubscriptionPlan
+  status               SubscriptionStatus
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean            @default(false)
+  trialEnd             DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id])
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  subscriptionId    String?
+  courseId          String?
+  programId         String?
+  organizationId    String?
+  stripePaymentId   String?       @unique
+  amount            Decimal       @db.Decimal(10,2)
+  currency          String        @default("MNT")
+  status            PaymentStatus
+  description       String?
+  invoiceUrl        String?
+  receiptUrl        String?
+  failureReason     String?
+  // Revenue split: platform commission taken from org course/program sales
+  commissionRate    Decimal?      @db.Decimal(5,2)  // % at time of payment
+  commissionAmount  Decimal?      @db.Decimal(10,2) // absolute amount to platform
+  orgAmount         Decimal?      @db.Decimal(10,2) // amount credited to org
+  payoutId          String?
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+
+  user         User          @relation(fields: [userId], references: [id])
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  payout       OrgPayout?    @relation(fields: [payoutId], references: [id])
+
+  @@map("payments")
+}
+
+// ─── ORG PAYOUTS ──────────────────────────────────────────────────────────────
+
+model OrgPayout {
+  id             String       @id @default(cuid())
+  organizationId String
+  amount         Decimal      @db.Decimal(10,2)
+  currency       String       @default("MNT")
+  status         PayoutStatus @default(PENDING)
+  periodStart    DateTime
+  periodEnd      DateTime
+  paidAt         DateTime?
+  reference      String?      // bank transfer ref or Stripe payout id
+  notes          String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  payments     Payment[]
+
+  @@index([organizationId, status])
+  @@map("org_payouts")
+}
+
+// ─── WALLET CREDITS (separate from XP) ───────────────────────────────────────
+
+model WalletCredit {
+  id          String   @id @default(cuid())
+  userId      String
+  // amount in $-equivalent credits (1 credit = $1 equivalent)
+  amount      Decimal  @db.Decimal(10,4)
+  balanceAfter Decimal @db.Decimal(10,4)
+  source      String   // xp_conversion | referral | promo | refund
+  description String?
+  // Links to source if from XP conversion
+  xpConversionId String? @unique
+  createdAt   DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xpConversion XpConversion? @relation(fields: [xpConversionId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("wallet_credits")
+}
+
+model XpConversion {
+  id           String   @id @default(cuid())
+  userId       String
+  xpAmount     Int      // XP burned (multiples of 1000)
+  creditAmount Decimal  @db.Decimal(10,4) // credits issued (xpAmount / 1000)
+  createdAt    DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletCredit WalletCredit?
+
+  @@index([userId])
+  @@map("xp_conversions")
+}
+
+model Coupon {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  discountType  String   // percentage | fixed
+  discountValue Decimal  @db.Decimal(10,2)
+  maxUses       Int?
+  usedCount     Int      @default(0)
+  validFrom     DateTime
+  validUntil    DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  orders Order[]
+
+  @@map("coupons")
+}
+
+// ─── NOTIFICATION ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  type      NotificationType
+  channel   NotificationChannel @default(IN_APP)
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean             @default(false)
+  readAt    DateTime?
+  sentAt    DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, sentAt(sort: Desc)])
+  @@map("notifications")
+}
+
+// ─── REVIEW ───────────────────────────────────────────────────────────────────
+
+model Review {
+  id              String   @id @default(cuid())
+  studentId       String
+  courseId        String
+  rating          Int      // 1-5
+  comment         String?  @db.Text
+  instructorReply String?  @db.Text
+  isApproved      Boolean  @default(false)
+  isFeatured      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  student User   @relation(fields: [studentId], references: [id])
+  course  Course @relation(fields: [courseId], references: [id])
+
+  @@unique([studentId, courseId])
+  @@map("reviews")
+}
+
+// ─── AUDIT LOG ────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  oldData    Json?
+  newData    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ─── GAMIFICATION ─────────────────────────────────────────────────────────────
+
+enum BadgeType {
+  FIRST_LESSON
+  FIRST_COURSE
+  STREAK_7
+  STREAK_30
+  STREAK_100
+  QUIZ_MASTER
+  SPEED_LEARNER
+  TOP_10
+  COURSE_CREATOR
+  PERFECT_SCORE
+  EARLY_BIRD
+}
+
+enum XpAction {
+  LESSON_COMPLETE
+  QUIZ_PASS
+  QUIZ_PERFECT
+  COURSE_COMPLETE
+  STREAK_BONUS
+  DAILY_CHALLENGE
+  REVIEW_SUBMIT
+  REFERRAL_SIGNUP
+}
+
+model UserBadge {
+  id        String    @id @default(cuid())
+  userId    String
+  badge     BadgeType
+  earnedAt  DateTime  @default(now())
+  metadata  Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badge])
+  @@map("user_badges")
+}
+
+model XpLog {
+  id        String    @id @default(cuid())
+  userId    String
+  action    XpAction
+  amount    Int
+  entityId  String?
+  note      String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("xp_logs")
+}
+
+model LeaderboardEntry {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  weeklyXp   Int      @default(0)
+  monthlyXp  Int      @default(0)
+  totalXp    Int      @default(0)
+  rank       Int?
+  weeklyRank Int?
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([totalXp(sort: Desc)])
+  @@index([weeklyXp(sort: Desc)])
+  @@index([monthlyXp(sort: Desc)])
+  @@map("leaderboard_entries")
+}
+
+model DailyChallenge {
+  id         String   @id @default(cuid())
+  question   String
+  options    Json
+  correctIdx Int
+  xpReward   Int      @default(25)
+  date       DateTime @unique @db.Date
+  createdAt  DateTime @default(now())
+
+  completions DailyChallengeCompletion[]
+
+  @@map("daily_challenges")
+}
+
+model DailyChallengeCompletion {
+  id          String   @id @default(cuid())
+  userId      String
+  challengeId String
+  isCorrect   Boolean
+  completedAt DateTime @default(now())
+
+  challenge DailyChallenge @relation(fields: [challengeId], references: [id])
+
+  @@unique([userId, challengeId])
+  @@map("daily_challenge_completions")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PHASE 1 — MULTI-TENANT FOUNDATION
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Proper many-to-many between User and Organization with per-member role.
+// User.organizationId is kept as primary org for session token efficiency.
+model OrganizationMember {
+  id             String          @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgMemberRole   @default(INSTRUCTOR)
+  status         OrgMemberStatus @default(ACTIVE)
+  invitedBy      String?
+  joinedAt       DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, status])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PHASE 2 — LEARNING DOMAIN
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Capstone / final project submission for a course or program
+model Capstone {
+  id          String         @id @default(cuid())
+  courseId    String?
+  programId   String?
+  studentId   String
+  title       String
+  description String?        @db.Text
+  submissionUrl String?      // link to repo, video, or file
+  fileUrls    String[]       // uploaded file keys
+  status      CapstoneStatus @default(DRAFT)
+  score       Float?         // final grade 0-100
+  feedback    String?        @db.Text
+  submittedAt DateTime?
+  gradedAt    DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  student  User             @relation(fields: [studentId], references: [id])
+  course   Course?          @relation(fields: [courseId], references: [id])
+  program  Program?         @relation(fields: [programId], references: [id])
+  reviews  CapstoneReview[]
+
+  @@index([studentId])
+  @@index([courseId])
+  @@map("capstones")
+}
+
+// Peer review assignment & submission for a Capstone
+model CapstoneReview {
+  id          String  @id @default(cuid())
+  capstoneId  String
+  reviewerId  String
+  score       Float?  // 0-100 average of rubric items
+  feedback    String? @db.Text
+  rubricScores Json?  // { criterion: score } map
+  isCompleted Boolean @default(false)
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  capstone Capstone @relation(fields: [capstoneId], references: [id], onDelete: Cascade)
+  reviewer User     @relation(fields: [reviewerId], references: [id])
+
+  @@unique([capstoneId, reviewerId])
+  @@map("capstone_reviews")
+}
+
+// Threaded comments on lessons, courses, programs, capstones
+model Comment {
+  id          String             @id @default(cuid())
+  contentType CommentContentType
+  contentId   String             // the id of the related entity
+  authorId    String
+  body        String             @db.Text
+  parentId    String?            // for nested replies
+  isDeleted   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent    Comment?   @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[]  @relation("CommentReplies")
+  reactions Reaction[]
+
+  @@index([contentType, contentId, createdAt(sort: Desc)])
+  @@index([authorId])
+  @@map("comments")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PHASE 3 — COMMERCE & MONETIZATION
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Unified order for course, program, or subscription purchases
+model Order {
+  id            String      @id @default(cuid())
+  userId        String
+  status        OrderStatus @default(PENDING)
+  totalAmount   Decimal     @db.Decimal(10,2)
+  discountAmount Decimal    @default(0) @db.Decimal(10,2)
+  finalAmount   Decimal     @db.Decimal(10,2)
+  currency      String      @default("MNT")
+  couponId      String?
+  stripePaymentIntentId String? @unique
+  stripeReceiptUrl      String?
+  notes         String?
+  metadata      Json?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user      User        @relation(fields: [userId], references: [id])
+  coupon    Coupon?     @relation(fields: [couponId], references: [id])
+  items     OrderItem[]
+  refund    RefundRequest?
+
+  @@index([userId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String   @id @default(cuid())
+  orderId          String
+  courseId         String?
+  programId        String?
+  subscriptionPlan SubscriptionPlan?
+  unitPrice        Decimal  @db.Decimal(10,2)
+  commissionRate   Decimal  @db.Decimal(5,2)
+  commissionAmount Decimal  @db.Decimal(10,2)
+  orgAmount        Decimal  @db.Decimal(10,2)
+  organizationId   String?
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  course  Course?  @relation(fields: [courseId], references: [id])
+  program Program? @relation(fields: [programId], references: [id])
+
+  @@map("order_items")
+}
+
+model RefundRequest {
+  id           String       @id @default(cuid())
+  orderId      String       @unique
+  requestedBy  String
+  reason       String
+  status       RefundStatus @default(REQUESTED)
+  refundAmount Decimal?     @db.Decimal(10,2)
+  processedBy  String?
+  processedAt  DateTime?
+  stripeRefundId String?
+  notes        String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("refund_requests")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PHASE 4 — ENGAGEMENT & SOCIAL
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Emoji reactions on comments, lessons, messages, capstones
+model Reaction {
+  id          String              @id @default(cuid())
+  contentType ReactionContentType
+  contentId   String
+  userId      String
+  emoji       String              // unicode emoji or slug like "thumbs_up"
+  createdAt   DateTime            @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment? @relation(fields: [contentId], references: [id], map: "reaction_comment_fk")
+
+  @@unique([contentType, contentId, userId, emoji])
+  @@index([contentType, contentId])
+  @@map("reactions")
+}
+
+// Personal to-do items with optional image attachment
+model TodoItem {
+  id          String       @id @default(cuid())
+  userId      String
+  title       String
+  body        String?      @db.Text
+  imageUrl    String?
+  dueDate     DateTime?
+  priority    TodoPriority @default(MEDIUM)
+  isCompleted Boolean      @default(false)
+  completedAt DateTime?
+  orderIndex  Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isCompleted])
+  @@map("todo_items")
+}
+
+// User-to-user direct messages
+model DirectMessage {
+  id          String   @id @default(cuid())
+  senderId    String
+  recipientId String
+  body        String   @db.Text
+  imageUrl    String?
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  sender    User @relation("MessageSender",    fields: [senderId],    references: [id], onDelete: Cascade)
+  recipient User @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, recipientId, createdAt(sort: Desc)])
+  @@index([recipientId, isRead])
+  @@map("direct_messages")
+}
+
+// Referral link tracking
+model Referral {
+  id           String   @id @default(cuid())
+  referrerId   String
+  referredId   String   @unique
+  code         String
+  convertedAt  DateTime?
+  rewardXp     Int      @default(500)
+  createdAt    DateTime @default(now())
+
+  referrer User @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred User @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId])
+  @@map("referrals")
+}
+
+// Friend relationships (bidirectional, request/accept flow)
+model Friendship {
+  id          String           @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@map("friendships")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PHASE 5 — AI COPILOT
+// ════════════════════════════════════════════════════════════════════════════════
+
+model AiSession {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String?
+  // optional context binding
+  courseId  String?
+  lessonId  String?
+  programId String?
+  model     String   @default("claude-sonnet-4-6")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AiMessage[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("ai_sessions")
+}
+
+model AiMessage {
+  id           String       @id @default(cuid())
+  sessionId    String
+  role         AiMessageRole
+  content      String       @db.Text
+  inputTokens  Int?
+  outputTokens Int?
+  createdAt    DateTime     @default(now())
+
+  session AiSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("ai_messages")
+}
+
+// Track AI usage per user per month for tier enforcement
+model AiUsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  action       String   // lesson_summary | quiz_help | study_plan | chat | analytics
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  cost         Decimal? @db.Decimal(10,6)
+  sessionId    String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("ai_usage_logs")
+}

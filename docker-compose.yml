@@ -1,0 +1,95 @@
+services:
+  # ─── POSTGRES ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: elearn-blue-postgres
+    restart: unless-stopped
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_USER: elearn
+      POSTGRES_PASSWORD: elearn_password
+      POSTGRES_DB: elearn_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U elearn -d elearn_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── REDIS ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: elearn-blue-redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── WEB APP ──────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: elearn-blue-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DATABASE_URL: "postgresql://elearn:elearn_password@postgres:5432/elearn_db"
+      REDIS_URL: "redis://redis:6379"
+      NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+      NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-http://localhost:3000}"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+    command: sh -c "npx prisma migrate deploy && node server.js"
+
+  # ─── WORKER ───────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: elearn-blue-worker
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DATABASE_URL: "postgresql://elearn:elearn_password@postgres:5432/elearn_db"
+      REDIS_URL: "redis://redis:6379"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+
+  # ─── NGINX (reverse proxy + SSL) ──────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: elearn-blue-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    profiles: ["production"]
+
+volumes:
+  postgres_data:
+  redis_data:

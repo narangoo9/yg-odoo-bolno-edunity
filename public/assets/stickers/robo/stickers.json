@@ -1,0 +1,62 @@
+[
+  {
+    "key": "hi",
+    "label": "Сайн уу!",
+    "src": "/assets/stickers/robo/robo-hi.png"
+  },
+  {
+    "key": "study",
+    "label": "Суралцъя!",
+    "src": "/assets/stickers/robo/robo-study.png"
+  },
+  {
+    "key": "code",
+    "label": "Код бичье!",
+    "src": "/assets/stickers/robo/robo-code.png"
+  },
+  {
+    "key": "certified",
+    "label": "Сертификат!",
+    "src": "/assets/stickers/robo/robo-certified.png"
+  },
+  {
+    "key": "streak",
+    "label": "Streak хадгал!",
+    "src": "/assets/stickers/robo/robo-streak.png"
+  },
+  {
+    "key": "thinking",
+    "label": "Бодъё...",
+    "src": "/assets/stickers/robo/robo-thinking.png"
+  },
+  {
+    "key": "celebrate",
+    "label": "Баяр хүргэе!",
+    "src": "/assets/stickers/robo/robo-celebrate.png"
+  },
+  {
+    "key": "heart",
+    "label": "Баярлалаа!",
+    "src": "/assets/stickers/robo/robo-heart.png"
+  },
+  {
+    "key": "goodjob",
+    "label": "Гайхалтай!",
+    "src": "/assets/stickers/robo/robo-goodjob.png"
+  },
+  {
+    "key": "confused",
+    "label": "Ойлгосонгүй...",
+    "src": "/assets/stickers/robo/robo-confused.png"
+  },
+  {
+    "key": "xp",
+    "label": "+XP авлаа!",
+    "src": "/assets/stickers/robo/robo-xp.png"
+  },
+  {
+    "key": "thanks",
+    "label": "Талархлаа!",
+    "src": "/assets/stickers/robo/robo-thanks.png"
+  }
+]
