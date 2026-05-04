@@ -660,6 +660,7 @@ function CardItem({
 
             {/* Sortable checklist — nested DndContext */}
             <DndContext
+              id={`checklist-${card.id}`}
               sensors={checkSensors}
               collisionDetection={closestCorners}
               onDragEnd={handleCheckDragEnd}
@@ -872,6 +873,7 @@ export function NotesClient({ userId }: { userId: string }) {
 
       {/* ── KANBAN BOARD ── */}
       <DndContext
+        id="notes-board"
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
