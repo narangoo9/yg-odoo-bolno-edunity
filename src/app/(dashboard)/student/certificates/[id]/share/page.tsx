@@ -4,7 +4,9 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getAppUrl } from "@/lib/app-url";
 import Link from "next/link";
-import { ExternalLink, Share2, Download } from "lucide-react";
+import { ExternalLink, Share2, ArrowLeft } from "lucide-react";
+import QRCode from "qrcode";
+import { ScaledCertificate } from "@/components/certificate/ScaledCertificate";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -54,8 +56,13 @@ export default async function CertSharePage({ params }: Props) {
     where: { id },
     include: {
       student: { select: { id: true, name: true } },
-      course: { include: { instructor: { select: { name: true } } } },
-      program: { select: { title: true } },
+      course: {
+        include: {
+          instructor: { select: { name: true } },
+          organization: { select: { name: true, logoUrl: true } },
+        },
+      },
+      program: { select: { title: true, certificateTitle: true } },
       organization: { select: { name: true, logoUrl: true } },
     },
   });
@@ -65,70 +72,77 @@ export default async function CertSharePage({ params }: Props) {
   const appUrl = getAppUrl();
   const verifyUrl = `${appUrl}/verify/${cert.verificationCode}`;
   const shareUrl = `${appUrl}/student/certificates/${id}/share`;
-  const courseTitle = cert.course?.title ?? cert.program?.title ?? "Сургалтын программ";
-  const instructorName = cert.course?.instructor.name ?? cert.organization?.name ?? "ELearn";
 
-  const formattedDate = new Intl.DateTimeFormat("mn-MN", {
-    year: "numeric", month: "long", day: "numeric",
+  const courseTitle =
+    cert.program?.certificateTitle ??
+    cert.program?.title ??
+    cert.course?.title ??
+    "Сургалтын программ";
+
+  const issuerName =
+    cert.organization?.name ??
+    cert.course?.organization?.name ??
+    "EduNity Academy";
+
+  const issuerLogo =
+    cert.organization?.logoUrl ?? cert.course?.organization?.logoUrl ?? undefined;
+
+  const instructorName = cert.course?.instructor?.name ?? issuerName;
+
+  // Format date on the server to avoid hydration mismatch
+  const completedDate = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   }).format(cert.issuedAt);
 
+  // Generate QR code data URL on the server
+  const qrCodeUrl = await QRCode.toDataURL(verifyUrl, {
+    width: 200,
+    margin: 1,
+    color: { dark: "#1e293b", light: "#ffffff" },
+  });
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-fade-up">
+    <div className="w-full max-w-6xl mx-auto space-y-6 animate-fade-up">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-foreground">Сертификат хуваалцах</h1>
-        <Link href="/student/settings#certificates" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Буцах
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/student"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft size={16} />
+            Буцах
+          </Link>
+          <span className="text-muted-foreground">/</span>
+          <h1 className="text-lg font-bold text-foreground">Сертификат хуваалцах</h1>
+        </div>
       </div>
 
-      {/* Certificate Preview */}
-      <div className="bg-card rounded-2xl border-2 border-slate-900 p-8 relative overflow-hidden shadow-xl">
-        <div className="absolute inset-4 border border-amber-400/40 rounded-2xl pointer-events-none" />
-        <div className="text-center space-y-4">
-          {cert.organization?.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={cert.organization.logoUrl}
-              alt={cert.organization?.name ?? "Organization logo"}
-              className="h-10 mx-auto object-contain"
-            />
-          )}
-          <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-            {cert.organization?.name ?? "ELearn Platform"}
-          </p>
-          <div>
-            <p className="text-3xl font-serif font-bold text-foreground">Сертификат</p>
-            <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">Certificate of Completion</p>
-          </div>
-          <div className="space-y-1 py-2">
-            <p className="text-xs text-muted-foreground">Энэхүү сертификатыг</p>
-            <p className="text-2xl font-serif text-amber-600 border-b border-amber-400 pb-2 inline-block px-8">
-              {cert.student.name}
-            </p>
-            <p className="text-xs text-muted-foreground">дараах курсийг амжилттай дүүргэсний гэрчилгээ болгон олгоно</p>
-            <p className="text-base font-semibold text-foreground">&ldquo;{courseTitle}&rdquo;</p>
-          </div>
-          <div className="flex justify-between items-end pt-4 text-xs text-muted-foreground">
-            <div className="text-center">
-              <div className="w-32 border-t border-border mb-1" />
-              <p className="font-medium text-foreground">{instructorName}</p>
-              <p>Багш</p>
-            </div>
-            <div className="text-center">
-              <p className="font-mono text-muted-foreground">{cert.certificateNo}</p>
-            </div>
-            <div className="text-center">
-              <div className="w-32 border-t border-border mb-1" />
-              <p className="font-medium text-foreground">{formattedDate}</p>
-              <p>Огноо</p>
-            </div>
-          </div>
-        </div>
+      {/* Premium Certificate Viewer */}
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm overflow-hidden">
+        <ScaledCertificate
+          studentName={cert.student.name}
+          courseTitle={courseTitle}
+          issuerName={issuerName}
+          issuerLogo={issuerLogo}
+          completedDate={completedDate}
+          certificateId={cert.certificateNo}
+          instructorName={instructorName}
+          instructorRole="Instructor"
+          directorName={issuerName}
+          directorRole={`Head of ${issuerName}`}
+          verificationUrl={verifyUrl}
+          qrCodeUrl={qrCodeUrl}
+          platformLogo="/brand/logo-light-mode-removebg-preview.png"
+          mascotImage="/assets/mascot/mascot-certificate.png"
+        />
       </div>
 
       {/* Share Actions */}
       <div className="bg-card rounded-2xl border border-border shadow-sm p-6 space-y-4">
-        <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+        <h2 className="font-semibold text-foreground flex items-center gap-2">
           <Share2 size={16} />
           Хуваалцах сонголтууд
         </h2>
@@ -141,12 +155,6 @@ export default async function CertSharePage({ params }: Props) {
               value={verifyUrl}
               className="flex-1 border border-border rounded-xl px-3 py-2 text-sm text-muted-foreground bg-muted"
             />
-            <button
-              onClick={() => navigator.clipboard.writeText(verifyUrl)}
-              className="px-3 py-2 border border-border rounded-xl text-sm hover:bg-muted"
-            >
-              Хуулах
-            </button>
           </div>
         </div>
 
@@ -167,14 +175,7 @@ export default async function CertSharePage({ params }: Props) {
             className="flex-1 flex items-center justify-center gap-2 border border-border rounded-xl py-2.5 text-sm font-medium hover:bg-muted transition-colors"
           >
             <ExternalLink size={14} />
-            Twitter/X
-          </a>
-          <a
-            href={`/api/v1/certificates/${id}/download`}
-            className="flex-1 flex items-center justify-center gap-2 bg-violet-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-violet-500 transition-colors"
-          >
-            <Download size={14} />
-            PDF татах
+            Twitter / X
           </a>
         </div>
       </div>

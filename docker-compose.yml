@@ -1,6 +1,7 @@
 services:
-  # ─── POSTGRES ─────────────────────────────────────────────────────────
+  # ─── POSTGRES (сонголт — зөвхөн local; Neon ашиглах бол энэ profile асаахгүй) ─
   postgres:
+    profiles: ["local-postgres"]
     image: postgres:16-alpine
     container_name: elearn-blue-postgres
     restart: unless-stopped
@@ -34,6 +35,7 @@ services:
       retries: 10
 
   # ─── WEB APP ──────────────────────────────────────────────────────────
+  # DATABASE_URL / DIRECT_URL: .env (Neon) эсвэл орчны хувьсагч. Local Postgres → profile local-postgres.
   web:
     build:
       context: .
@@ -42,14 +44,17 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     depends_on:
-      postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     environment:
-      DATABASE_URL: "postgresql://elearn:elearn_password@postgres:5432/elearn_db"
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to your Neon pooled connection string}
+      DIRECT_URL: ${DIRECT_URL:-${DATABASE_URL}}
       REDIS_URL: "redis://redis:6379"
       NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
       NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+      AUTH_SECRET: "${AUTH_SECRET:-${NEXTAUTH_SECRET}}"
       NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-http://localhost:3000}"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
@@ -65,11 +70,13 @@ services:
       dockerfile: Dockerfile.worker
     container_name: elearn-blue-worker
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
-      postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     environment:
-      DATABASE_URL: "postgresql://elearn:elearn_password@postgres:5432/elearn_db"
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to your Neon pooled connection string}
+      DIRECT_URL: ${DIRECT_URL:-${DATABASE_URL}}
       REDIS_URL: "redis://redis:6379"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_USER: "${SMTP_USER:-}"

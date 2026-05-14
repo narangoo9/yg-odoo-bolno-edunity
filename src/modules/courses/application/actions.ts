@@ -16,6 +16,9 @@ import {
   updateLessonSchema,
   enrollCourseSchema,
   reorderLessonsSchema,
+  lessonSectionSchema,
+  completeLessonSectionSchema,
+  createYouTubeCourseSchema,
 } from "../domain/schemas";
 import type {
   CreateCourseInput,
@@ -24,7 +27,15 @@ import type {
   CreateLessonInput,
   UpdateLessonInput,
   EnrollCourseInput,
+  LessonSectionInput,
+  CreateYouTubeCourseInput,
 } from "../domain/schemas";
+import {
+  extractYouTubeVideoId,
+  getTimestampLines,
+  getYouTubeThumbnailUrls,
+  parseTimestampSections,
+} from "@/lib/youtube-course";
 
 // ─── COURSE CRUD ──────────────────────────────────────────────────────────────
 
@@ -107,6 +118,150 @@ export async function publishCourse(id: string) {
 
 export async function unpublishCourse(id: string) {
   return updateCourse(id, { status: "DRAFT" });
+}
+
+export async function previewYouTubeCourseImport(input: {
+  youtubeUrl: string;
+  descriptionText?: string;
+  durationSeconds?: number | null;
+}) {
+  const videoId = extractYouTubeVideoId(input.youtubeUrl);
+  if (!videoId) return { error: "Invalid YouTube URL" };
+
+  const thumbnails = getYouTubeThumbnailUrls(videoId);
+  let title = "";
+  let description = input.descriptionText ?? "";
+  let durationSeconds = input.durationSeconds ?? null;
+  let fetchedDescription = false;
+
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (apiKey) {
+    try {
+      const params = new URLSearchParams({
+        part: "snippet,contentDetails",
+        id: videoId,
+        key: apiKey,
+      });
+      const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`, {
+        cache: "no-store",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const item = data.items?.[0];
+        title = item?.snippet?.title ?? "";
+        const apiDescription = item?.snippet?.description || "";
+        description = description || apiDescription;
+        fetchedDescription = apiDescription.length > 0;
+        durationSeconds = durationSeconds ?? parseIsoDuration(item?.contentDetails?.duration);
+      }
+    } catch {
+      // Manual fallback remains available.
+    }
+  }
+
+  if (!title) {
+    try {
+      const response = await fetch(
+        `https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=${videoId}`,
+        { cache: "no-store" },
+      );
+      if (response.ok) {
+        const data = await response.json();
+        title = data.title ?? "";
+      }
+    } catch {
+      // Manual fallback remains available.
+    }
+  }
+
+  const timestampLines = getTimestampLines(description);
+  const sections = parseTimestampSections(description, durationSeconds);
+  if (process.env.NODE_ENV !== "production") {
+    console.log("videoId", videoId);
+    console.log("description length", description.length);
+    console.log("timestamp lines found", timestampLines.length);
+    console.log("parsed sections", sections.length);
+  }
+
+  return {
+    success: true,
+    data: {
+      sourceYoutubeId: videoId,
+      sourceYoutubeUrl: input.youtubeUrl,
+      title,
+      coverImage: thumbnails.maxres,
+      fallbackCoverImage: thumbnails.fallback,
+      description,
+      durationSeconds,
+      sections,
+      descriptionFetchError:
+        !fetchedDescription && !input.descriptionText?.trim()
+          ? "Could not fetch YouTube description. Please paste timestamp chapters manually."
+          : null,
+    },
+  };
+}
+
+export async function createCourseFromYouTube(input: CreateYouTubeCourseInput) {
+  const session = await auth();
+  if (!session?.user) throw new Error("Нэвтрэх шаардлагатай");
+  if (!["INSTRUCTOR", "ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+    throw new Error("Эрхгүй");
+  }
+
+  const parsed = createYouTubeCourseSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
+
+  const slug = await generateSlug(parsed.data.title, "courses");
+  const description = `YouTube course: ${parsed.data.title}`;
+
+  const course = await db.course.create({
+    data: {
+      title: parsed.data.title,
+      slug,
+      description,
+      shortDescription: "YouTube timestamp course",
+      thumbnailUrl: parsed.data.coverImage,
+      coverImage: parsed.data.coverImage,
+      sourceType: "YOUTUBE",
+      sourceYoutubeId: parsed.data.sourceYoutubeId,
+      sourceYoutubeUrl: parsed.data.sourceYoutubeUrl,
+      durationSeconds: parsed.data.durationSeconds ?? null,
+      duration: parsed.data.durationSeconds ? Math.ceil(parsed.data.durationSeconds / 60) : null,
+      instructorId: session.user.id,
+      organizationId: session.user.organizationId,
+      status: "DRAFT",
+      tags: ["youtube"],
+      prerequisites: [],
+      learningOutcomes: ["Watch the YouTube course by timestamp sections"],
+      sections: {
+        create: parsed.data.sections.map((section, index) => ({
+          title: section.title,
+          order: index + 1,
+          startSeconds: section.startSeconds,
+          endSeconds: section.endSeconds ?? null,
+        })),
+      },
+    },
+    include: { sections: { orderBy: { order: "asc" } } },
+  });
+  if (process.env.NODE_ENV !== "production") {
+    console.log("saved sections", course.sections.length);
+  }
+
+  revalidatePath("/instructor/courses");
+  revalidatePath(`/instructor/courses/${course.id}`);
+  return { success: true, data: course };
+}
+
+function parseIsoDuration(value: string | undefined): number | null {
+  if (!value) return null;
+  const match = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!match) return null;
+  const hours = Number(match[1] ?? 0);
+  const minutes = Number(match[2] ?? 0);
+  const seconds = Number(match[3] ?? 0);
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
 // ─── MODULE CRUD ──────────────────────────────────────────────────────────────
@@ -339,6 +494,52 @@ export async function reorderLessons(input: { lessons: { id: string; orderIndex:
   return { success: true };
 }
 
+export async function createLessonSection(input: LessonSectionInput) {
+  const session = await auth();
+  if (!session?.user) return { error: "Нэвтрэх шаардлагатай" };
+
+  const parsed = lessonSectionSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
+
+  const lesson = await db.lesson.findUnique({
+    where: { id: parsed.data.lessonId },
+    include: { module: { include: { course: true } } },
+  });
+
+  const canEdit =
+    lesson &&
+    (lesson.module.course.instructorId === session.user.id ||
+      session.user.role === "SUPER_ADMIN" ||
+      (session.user.role === "ORG_ADMIN" &&
+        lesson.module.course.organizationId === session.user.organizationId));
+  if (!canEdit) return { error: "Эрхгүй" };
+
+  const lastSection = await db.lessonSection.findFirst({
+    where: { lessonId: parsed.data.lessonId },
+    orderBy: { order: "desc" },
+  });
+
+  const section = await db.lessonSection.create({
+    data: {
+      lessonId: parsed.data.lessonId,
+      title: parsed.data.title,
+      description: parsed.data.description || null,
+      order: parsed.data.order ?? (lastSection?.order ?? -1) + 1,
+      youtubeId: parsed.data.youtubeId,
+      startSeconds: parsed.data.startSeconds,
+      endSeconds: parsed.data.endSeconds,
+      taskTitle: parsed.data.taskTitle || null,
+      taskDescription: parsed.data.taskDescription || null,
+      pdfUrl: parsed.data.pdfUrl || null,
+      resourceUrl: parsed.data.resourceUrl || null,
+    },
+  });
+
+  revalidatePath(`/instructor/courses/${lesson.module.courseId}`);
+  revalidatePath(`/student/courses/${lesson.module.courseId}/learn`);
+  return { success: true, data: section };
+}
+
 // ─── ENROLLMENT ───────────────────────────────────────────────────────────────
 
 export async function enrollCourse(input: EnrollCourseInput) {
@@ -364,16 +565,12 @@ export async function enrollCourse(input: EnrollCourseInput) {
       select: { plan: true, status: true },
     });
 
-    if (!hasActiveCourseAccess(subscription?.plan, subscription?.status)) {
-      return { requiresUpgrade: true as const };
-    }
-
     const enrollment = await db.enrollment.create({
       data: {
         studentId: session.user.id,
         courseId,
         status: "ACTIVE",
-        source: "subscription",
+        source: hasActiveCourseAccess(subscription?.plan, subscription?.status) ? "subscription" : "free_preview",
       },
     });
 
@@ -466,6 +663,58 @@ export async function markLessonComplete(lessonId: string) {
 
   revalidatePath(`/student/courses/${courseId}/learn`);
   return { success: true, courseCompleted };
+}
+
+export async function markLessonSectionComplete(input: { sectionId: string }) {
+  const session = await auth();
+  if (!session?.user) return { error: "Нэвтрэх шаардлагатай" };
+
+  const parsed = completeLessonSectionSchema.safeParse(input);
+  if (!parsed.success) return { error: "Буруу section" };
+
+  const section = await db.lessonSection.findUnique({
+    where: { id: parsed.data.sectionId },
+    include: {
+      lesson: {
+        include: {
+          sections: { select: { id: true } },
+          module: { include: { course: true } },
+        },
+      },
+    },
+  });
+  if (!section) return { error: "Section олдсонгүй" };
+
+  const courseId = section.lesson.module.courseId;
+  const enrollment = await db.enrollment.findUnique({
+    where: { studentId_courseId: { studentId: session.user.id, courseId } },
+  });
+  if (!enrollment) return { error: "Бүртгэл олдсонгүй" };
+
+  await db.lessonSectionCompletion.upsert({
+    where: { sectionId_studentId: { sectionId: section.id, studentId: session.user.id } },
+    create: { sectionId: section.id, studentId: session.user.id },
+    update: { completedAt: new Date() },
+  });
+
+  const completedSections = await db.lessonSectionCompletion.count({
+    where: {
+      studentId: session.user.id,
+      sectionId: { in: section.lesson.sections.map((item) => item.id) },
+    },
+  });
+
+  const lessonCompleted =
+    section.lesson.sections.length > 0 && completedSections >= section.lesson.sections.length;
+  let courseCompleted = false;
+
+  if (lessonCompleted) {
+    const result = await markLessonComplete(section.lessonId);
+    courseCompleted = Boolean(result && "courseCompleted" in result && result.courseCompleted);
+  }
+
+  revalidatePath(`/student/courses/${courseId}/learn`);
+  return { success: true, lessonCompleted, courseCompleted };
 }
 
 export async function trackLessonView(lessonId: string, courseId: string, enrollmentId: string) {

@@ -33,8 +33,8 @@ const WHY_FEATURES = [
 
 function FeatureValue({ value }: { value: boolean | string }) {
   if (value === true)  return <Check size={14} className="text-emerald-500 mx-auto" aria-label="Тийм" />;
-  if (value === false) return <span className="text-slate-300 text-lg block text-center leading-none" aria-label="Үгүй">—</span>;
-  return <span className="text-[11px] font-semibold text-slate-700 text-center block">{value}</span>;
+  if (value === false) return <span className="text-slate-300 dark:text-slate-600 text-lg block text-center leading-none" aria-label="Үгүй">—</span>;
+  return <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 text-center block">{value}</span>;
 }
 
 export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
@@ -169,22 +169,22 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
         <div className="grid lg:grid-cols-3 gap-5 items-start">
 
           {/* Standard (Free) */}
-          <div className="upg-card relative rounded-2xl border-2 border-slate-200 bg-white p-6 flex flex-col gap-5">
+          <div className="upg-card relative rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-card p-6 flex flex-col gap-5">
             <div>
-              <div className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-                <BookOpen size={18} className="text-slate-500" aria-hidden="true" />
+              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
+                <BookOpen size={18} className="text-slate-500 dark:text-slate-400" aria-hidden="true" />
               </div>
-              <h3 className="text-lg font-black text-slate-800">Standard</h3>
-              <p className="text-[12px] text-slate-500 mt-0.5">Үнэгүй хичээлээр эхлэх</p>
+              <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">Standard</h3>
+              <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">Үнэгүй хичээлээр эхлэх</p>
             </div>
 
             <div>
-              <span className="text-3xl font-black text-slate-800">Үнэгүй</span>
+              <span className="text-3xl font-black text-slate-800 dark:text-slate-100">Үнэгүй</span>
             </div>
 
             <button
               disabled
-              className="w-full py-3 min-h-[44px] rounded-xl text-[13px] font-bold bg-slate-100 text-slate-400 cursor-not-allowed"
+              className="w-full py-3 min-h-[44px] rounded-xl text-[13px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed"
             >
               {isCurrent("STANDARD") ? "Одоогийн тариф ✓" : "Standard"}
             </button>
@@ -199,10 +199,10 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
                 "5 GB тэмдэглэл хадгалах",
               ].map(f => (
                 <li key={f} className="flex items-start gap-2">
-                  <div className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
-                    <Check size={9} className="text-slate-500" />
+                  <div className="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={9} className="text-slate-500 dark:text-slate-400" />
                   </div>
-                  <span className="text-[12px] text-slate-600">{f}</span>
+                  <span className="text-[12px] text-slate-600 dark:text-slate-300">{f}</span>
                 </li>
               ))}
             </ul>
@@ -210,8 +210,7 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
 
           {/* Premium */}
           <div
-            className="upg-card relative rounded-2xl border-2 border-violet-400 p-6 flex flex-col gap-5 scale-[1.03] shadow-xl shadow-violet-200/60"
-            style={{ background: "linear-gradient(160deg,#F5F3FF 0%,#EDE9FE 60%,#fff 100%)" }}
+            className="upg-card relative rounded-2xl border-2 border-violet-400 p-6 flex flex-col gap-5 scale-[1.03] shadow-xl shadow-violet-200/60 dark:shadow-violet-900/40 bg-gradient-to-bl from-violet-50 via-purple-50/80 to-white dark:from-violet-950/60 dark:via-violet-900/20 dark:to-card"
           >
             {/* Glow ring */}
             <div
@@ -229,17 +228,17 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
             </div>
 
             <div className="relative">
-              <div className="w-10 h-10 rounded-2xl bg-violet-100 flex items-center justify-center mb-3">
-                <Crown size={18} className="text-violet-600" aria-hidden="true" />
+              <div className="w-10 h-10 rounded-2xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center mb-3">
+                <Crown size={18} className="text-violet-600 dark:text-violet-400" aria-hidden="true" />
               </div>
-              <h3 className="text-lg font-black text-violet-900">Premium</h3>
-              <p className="text-[12px] text-violet-500 mt-0.5">Бүх компанийн хичээл + AI туслах</p>
+              <h3 className="text-lg font-black text-violet-900 dark:text-violet-100">Premium</h3>
+              <p className="text-[12px] text-violet-500 dark:text-violet-400 mt-0.5">Бүх компанийн хичээл + AI туслах</p>
             </div>
 
             <div>
               <div className="flex items-end gap-1">
-                <span className="text-3xl font-black text-violet-900">₮{premiumPrice.toLocaleString()}</span>
-                <span className="text-xs text-violet-400 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
+                <span className="text-3xl font-black text-violet-900 dark:text-violet-100">₮{premiumPrice.toLocaleString()}</span>
+                <span className="text-xs text-violet-400 dark:text-violet-500 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
               </div>
               {billing === "yearly" && (
                 <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
@@ -278,17 +277,17 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
                 "AI туслах (Beta)",
               ].map(f => (
                 <li key={f} className="flex items-start gap-2">
-                  <div className="w-4 h-4 rounded-full bg-violet-100 flex items-center justify-center shrink-0 mt-0.5">
-                    <Check size={9} className="text-violet-600" />
+                  <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={9} className="text-violet-600 dark:text-violet-400" />
                   </div>
-                  <span className="text-[12px] text-violet-800">{f}</span>
+                  <span className="text-[12px] text-violet-800 dark:text-violet-200">{f}</span>
                 </li>
               ))}
             </ul>
           </div>
 
           {/* Pro */}
-          <div className="upg-card relative rounded-2xl border-2 border-amber-300 bg-gradient-to-b from-amber-50 to-white p-6 flex flex-col gap-5">
+          <div className="upg-card relative rounded-2xl border-2 border-amber-300 dark:border-amber-600/50 bg-gradient-to-b from-amber-50 to-white dark:from-amber-950/40 dark:to-card p-6 flex flex-col gap-5">
             {/* Badge */}
             <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-amber-500 text-white text-[10px] font-black rounded-full shadow-md whitespace-nowrap">
               Best Value
@@ -299,17 +298,17 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
             </div>
 
             <div className="relative">
-              <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center mb-3">
-                <Sparkles size={18} className="text-amber-600" aria-hidden="true" />
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-3">
+                <Sparkles size={18} className="text-amber-600 dark:text-amber-400" aria-hidden="true" />
               </div>
-              <h3 className="text-lg font-black text-amber-900">Pro</h3>
-              <p className="text-[12px] text-amber-500 mt-0.5">Хязгааргүй хандалт + Mentor хичээл</p>
+              <h3 className="text-lg font-black text-amber-900 dark:text-amber-100">Pro</h3>
+              <p className="text-[12px] text-amber-500 dark:text-amber-400 mt-0.5">Хязгааргүй хандалт + Mentor хичээл</p>
             </div>
 
             <div>
               <div className="flex items-end gap-1">
-                <span className="text-3xl font-black text-amber-900">₮{proPrice.toLocaleString()}</span>
-                <span className="text-xs text-amber-400 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
+                <span className="text-3xl font-black text-amber-900 dark:text-amber-100">₮{proPrice.toLocaleString()}</span>
+                <span className="text-xs text-amber-400 dark:text-amber-500 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
               </div>
               {billing === "yearly" && (
                 <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
@@ -348,10 +347,10 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
                 "Шинэ курст эрт хандах",
               ].map(f => (
                 <li key={f} className="flex items-start gap-2">
-                  <div className="w-4 h-4 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
-                    <Check size={9} className="text-amber-600" />
+                  <div className="w-4 h-4 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={9} className="text-amber-600 dark:text-amber-400" />
                   </div>
-                  <span className="text-[12px] text-amber-800">{f}</span>
+                  <span className="text-[12px] text-amber-800 dark:text-amber-200">{f}</span>
                 </li>
               ))}
             </ul>
@@ -371,45 +370,45 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
               />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-900">Яагаад Premium авах вэ?</h2>
-              <p className="text-sm text-slate-500">Upgrade хийснээр олж авах давуу тал</p>
+              <h2 className="text-xl font-black text-slate-900 dark:text-slate-100">Яагаад Premium авах вэ?</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Upgrade хийснээр олж авах давуу тал</p>
             </div>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {WHY_FEATURES.map(({ icon: Icon, title, desc }) => (
               <div
                 key={title}
-                className="bg-white rounded-2xl border border-slate-100 p-4 hover:border-violet-200 hover:shadow-md transition-all group"
+                className="bg-white dark:bg-card rounded-2xl border border-slate-100 dark:border-border p-4 hover:border-violet-200 dark:hover:border-violet-800/50 hover:shadow-md transition-all group"
               >
-                <div className="w-9 h-9 rounded-xl bg-violet-50 group-hover:bg-violet-100 flex items-center justify-center mb-3 transition-colors">
-                  <Icon size={18} className="text-violet-600" aria-hidden="true" />
+                <div className="w-9 h-9 rounded-xl bg-violet-50 dark:bg-violet-900/30 group-hover:bg-violet-100 dark:group-hover:bg-violet-900/50 flex items-center justify-center mb-3 transition-colors">
+                  <Icon size={18} className="text-violet-600 dark:text-violet-400" aria-hidden="true" />
                 </div>
-                <p className="text-[13px] font-bold text-slate-800 mb-1">{title}</p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">{desc}</p>
+                <p className="text-[13px] font-bold text-slate-800 dark:text-slate-100 mb-1">{title}</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">{desc}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* ── COMPARISON TABLE ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100">
-            <h2 className="text-[15px] font-black text-slate-900">Бүрэн харьцуулалт</h2>
+        <div className="bg-white dark:bg-card rounded-2xl border border-slate-200 dark:border-border shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-border">
+            <h2 className="text-[15px] font-black text-slate-900 dark:text-slate-100">Бүрэн харьцуулалт</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-[45%]">
+                <tr className="border-b border-slate-100 dark:border-border bg-slate-50 dark:bg-muted/40">
+                  <th className="text-left px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[45%]">
                     Онцлог
                   </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-center">
+                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">
                     Standard
                   </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-violet-600 uppercase tracking-wider text-center">
+                  <th className="px-4 py-3 text-[11px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider text-center">
                     Premium
                   </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-amber-600 uppercase tracking-wider text-center">
+                  <th className="px-4 py-3 text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider text-center">
                     Pro
                   </th>
                 </tr>
@@ -419,11 +418,11 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
                   <tr
                     key={row.feature}
                     className={cn(
-                      "border-b border-slate-50 upg-row transition-colors",
-                      i % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                      "border-b border-slate-50 dark:border-border/50 upg-row transition-colors",
+                      i % 2 === 0 ? "bg-white dark:bg-card" : "bg-slate-50/50 dark:bg-muted/20"
                     )}
                   >
-                    <td className="px-6 py-3.5 text-[12px] font-medium text-slate-700">{row.feature}</td>
+                    <td className="px-6 py-3.5 text-[12px] font-medium text-slate-700 dark:text-slate-300">{row.feature}</td>
                     <td className="px-4 py-3.5"><FeatureValue value={row.standard} /></td>
                     <td className="px-4 py-3.5"><FeatureValue value={row.premium} /></td>
                     <td className="px-4 py-3.5"><FeatureValue value={row.pro} /></td>

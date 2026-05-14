@@ -82,7 +82,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <DashboardTopbar user={session.user} unreadNotifications={unreads.notifications} />
           <div className="flex flex-1 overflow-hidden">
-            <main className="flex-1 overflow-y-auto">
+            <main className="flex-1 min-w-0 overflow-y-auto">
               <div className="mx-auto px-4 py-4 sm:px-5 sm:py-5">
                 {children}
               </div>

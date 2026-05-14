@@ -56,8 +56,8 @@ export async function registerUser(input: RegisterInput) {
     },
   });
 
-  // Send verification email
-  await sendEmail({
+  // Send verification email (non-blocking — registration succeeds even if email fails)
+  sendEmail({
     to: email,
     subject: "Имэйл хаягаа баталгаажуулна уу",
     template: "verify-email",
@@ -65,7 +65,7 @@ export async function registerUser(input: RegisterInput) {
       name,
       verifyUrl: `${appUrl}/verify-email?token=${token}`,
     },
-  });
+  }).catch(() => null);
 
   return { success: true, message: "Бүртгэл амжилттай. Имэйлээ шалгана уу." };
 }
@@ -257,7 +257,7 @@ export async function onboardOrganization(input: OrgOnboardInput) {
     },
   });
 
-  await sendEmail({
+  sendEmail({
     to: adminEmail,
     subject: "Байгууллагын бүртгэл баталгаажуулна уу",
     template: "verify-email",
@@ -265,7 +265,7 @@ export async function onboardOrganization(input: OrgOnboardInput) {
       name: adminName,
       verifyUrl: `${appUrl}/verify-email?token=${token}`,
     },
-  });
+  }).catch(() => null);
 
   return { success: true, orgId: result.org.id, adminId: result.admin.id };
 }

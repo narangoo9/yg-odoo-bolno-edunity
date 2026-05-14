@@ -26,9 +26,12 @@ export function applyUserToToken(token: JWT, user?: AuthUserLike | null) {
 
 export function applyTokenToSession(session: Session, token: JWT) {
   session.user.id = (token.id as string) ?? token.sub ?? "";
-  session.user.role = token.role as UserRole;
+  session.user.role = (token.role as UserRole | undefined) ?? "STUDENT";
   session.user.status = (token.status as string) ?? "ACTIVE";
   session.user.organizationId = (token.organizationId as string | null) ?? null;
+  if (token.picture !== undefined) {
+    session.user.image = (token.picture as string | null) ?? null;
+  }
 
   return session;
 }

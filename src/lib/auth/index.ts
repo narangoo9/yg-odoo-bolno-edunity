@@ -3,6 +3,7 @@ import { headers as nextHeaders } from "next/headers";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { Adapter } from "next-auth/adapters";
 import type { Session } from "next-auth";
+import type { Provider } from "next-auth/providers";
 import { getToken } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -11,68 +12,92 @@ import { db } from "@/lib/db";
 import { applyTokenToSession, applyUserToToken, authConfig, type AuthUserLike } from "@/lib/auth/config";
 import { loginSchema } from "@/modules/auth/domain/schemas";
 
+const authSecret =
+  process.env.AUTH_SECRET ??
+  process.env.NEXTAUTH_SECRET ??
+  (process.env.NODE_ENV === "development" ? "elearn-dev-auth-secret-not-for-production" : undefined);
+
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+
+const providers: Provider[] = [];
+
+if (googleClientId && googleClientSecret) {
+  providers.push(
+    Google({
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
+      allowDangerousEmailAccountLinking: true,
+    })
+  );
+}
+
+providers.push(
+  Credentials({
+    async authorize(credentials) {
+      const parsed = loginSchema.safeParse(credentials);
+      if (!parsed.success) return null;
+
+      const email = parsed.data.email.trim().toLowerCase();
+      const { password } = parsed.data;
+
+      const user = await db.user.findFirst({
+        where: { email },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          passwordHash: true,
+          role: true,
+          status: true,
+          avatarUrl: true,
+          organizationId: true,
+        },
+      });
+
+      if (!user || !user.passwordHash) return null;
+      if (user.status === "SUSPENDED") return null;
+
+      const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+      if (!passwordMatch) return null;
+
+      await db.user
+        .update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+          select: { id: true },
+        })
+        .catch(() => null);
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        image: user.avatarUrl,
+        organizationId: user.organizationId,
+      };
+    },
+  })
+);
+
 const nextAuthResult = NextAuth({
   ...authConfig,
+  secret: authSecret,
   adapter: PrismaAdapter(db) as Adapter,
-  providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
-    Credentials({
-      async authorize(credentials) {
-        const parsed = loginSchema.safeParse(credentials);
-        if (!parsed.success) return null;
-
-        const { email, password } = parsed.data;
-
-        const user = await db.user.findFirst({
-          where: {
-            email: {
-              equals: email,
-              mode: "insensitive",
-            },
-          },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            passwordHash: true,
-            role: true,
-            status: true,
-            avatarUrl: true,
-            organizationId: true,
-          },
-        });
-
-        if (!user || !user.passwordHash) return null;
-        if (user.status === "SUSPENDED") return null;
-
-        const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-        if (!passwordMatch) return null;
-
-        await db.user
-          .update({
-            where: { id: user.id },
-            data: { lastLoginAt: new Date() },
-            select: { id: true },
-          })
-          .catch(() => null);
-
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          image: user.avatarUrl,
-          organizationId: user.organizationId,
-        };
-      },
-    }),
-  ],
+  providers,
   callbacks: {
     ...authConfig.callbacks,
+    async signIn({ user, account }) {
+      if (account?.provider !== "google" || !user?.email) return true;
+      const existing = await db.user.findFirst({
+        where: { email: user.email.trim().toLowerCase() },
+        select: { status: true },
+      });
+      if (existing?.status === "SUSPENDED") return false;
+      return true;
+    },
     async jwt({ token, user, trigger }) {
       applyUserToToken(token, user as AuthUserLike | undefined);
 
@@ -81,6 +106,7 @@ const nextAuthResult = NextAuth({
 
         if (!ext.role) {
           const userId = user.id ?? token.sub ?? "";
+
           const dbUser = await db.user.findUnique({
             where: { id: userId },
             select: { role: true, status: true, organizationId: true },
@@ -119,13 +145,14 @@ const nextAuthResult = NextAuth({
         if (userId) {
           const dbUser = await db.user.findUnique({
             where: { id: userId },
-            select: { role: true, status: true, organizationId: true },
+            select: { role: true, status: true, organizationId: true, avatarUrl: true },
           });
 
           if (dbUser) {
             token.role = dbUser.role;
             token.status = dbUser.status;
             token.organizationId = dbUser.organizationId;
+            if (dbUser.avatarUrl) token.picture = dbUser.avatarUrl;
           }
         }
       }
@@ -140,7 +167,7 @@ const nextAuthResult = NextAuth({
 
 async function getServerSessionFromToken(): Promise<Session | null> {
   const headers = await nextHeaders();
-  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  const secret = authSecret;
 
   if (!secret) {
     return null;
@@ -151,8 +178,8 @@ async function getServerSessionFromToken(): Promise<Session | null> {
     secret,
     secureCookie:
       headers.get("x-forwarded-proto") === "https" ||
-      process.env.NEXTAUTH_URL?.startsWith("https://") ||
-      process.env.AUTH_URL?.startsWith("https://"),
+      process.env.NEXTAUTH_URL?.startsWith("https://") === true ||
+      process.env.AUTH_URL?.startsWith("https://") === true,
   });
 
   if (!token) {

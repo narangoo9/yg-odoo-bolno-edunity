@@ -8,9 +8,12 @@ export const redis =
   globalForRedis.redis ??
   (redisUrl
     ? new IORedis(redisUrl, {
-        maxRetriesPerRequest: 3,
+        connectTimeout: 500,
+        commandTimeout: 700,
+        maxRetriesPerRequest: 1,
         lazyConnect: true,
         enableOfflineQueue: false,
+        retryStrategy: () => null,
       })
     : null);
 

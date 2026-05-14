@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { CreateCourseForm } from "@/components/course/CreateCourseForm";
+import { auth } from "@/lib/auth";
+import { CreateYouTubeCourseForm } from "@/components/course/CreateYouTubeCourseForm";
 
-export const metadata: Metadata = { title: "Шинэ курс үүсгэх" };
+export const metadata: Metadata = { title: "Create Course from YouTube" };
 
 export default async function NewCoursePage() {
   const session = await auth();
@@ -11,13 +11,16 @@ export default async function NewCoursePage() {
   if (!["INSTRUCTOR", "ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/student");
   }
+
   return (
-    <div className="max-w-2xl animate-fade-up">
+    <div className="max-w-4xl animate-fade-up">
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-foreground">Шинэ курс үүсгэх</h1>
-        <p className="text-muted-foreground text-sm mt-1">Курсийн үндсэн мэдээллийг оруулна уу</p>
+        <h1 className="text-xl font-bold text-foreground">Create Course from YouTube</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Paste one YouTube URL, parse timestamp sections, then save a draft course.
+        </p>
       </div>
-      <CreateCourseForm />
+      <CreateYouTubeCourseForm />
     </div>
   );
 }

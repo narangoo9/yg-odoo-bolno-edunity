@@ -1,31 +1,36 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export function CourseCertificateCard() {
+  const { t } = useLanguage();
+
   return (
-    <div className="bg-gradient-to-br from-[#F5F3FF] to-white rounded-2xl border border-[#E9DFFF] p-5 flex items-center gap-4">
+    <div className="bg-white dark:bg-[#120E20] rounded-2xl border border-[#E5E7EB] dark:border-[#1E1B2E] p-4 flex items-center gap-3.5">
       <div className="shrink-0">
         <Image
           src="/assets/mascot/mascot-certificate.png"
           alt="Сертификат"
-          width={72}
-          height={72}
+          width={60}
+          height={60}
           className="select-none drop-shadow-sm"
         />
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-[#0F172A] mb-1">
-          Сертификат авах боломжтой
+        <p className="text-sm font-bold text-[#111827] dark:text-white mb-0.5">
+          {t("course.certificate")}
         </p>
-        <p className="text-xs text-gray-500 leading-relaxed mb-3">
-          Курсаа дуусгаад EduNity болон байгууллагын сертификат авна.
+        <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF] leading-relaxed mb-2.5">
+          {t("course.certificateDesc")}
         </p>
         <Link
-          href="/certificates"
-          className="inline-block px-3.5 py-1.5 bg-transparent text-violet-600 border border-violet-300 text-xs font-semibold rounded-lg hover:bg-violet-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-1"
+          href="/student/certificates"
+          className="inline-block px-3 py-1.5 text-violet-600 dark:text-violet-400 border border-violet-300 dark:border-violet-700 text-xs font-semibold rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors focus:outline-none"
         >
-          Сертификатын нөхцөл харах
+          {t("course.certificateBtn")}
         </Link>
       </div>
     </div>

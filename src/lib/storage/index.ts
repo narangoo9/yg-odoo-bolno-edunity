@@ -31,7 +31,11 @@ class CloudinaryAdapter implements StorageAdapter {
     form.append("folder", folder);
     if (filename) form.append("public_id", filename);
 
-    const res = await fetch(`${this.apiUrl}/auto/upload`, { method: "POST", body: form });
+    const res = await fetch(`${this.apiUrl}/auto/upload`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(4_000),
+    });
     if (!res.ok) throw new Error("Cloudinary upload failed");
 
     const data = await res.json();

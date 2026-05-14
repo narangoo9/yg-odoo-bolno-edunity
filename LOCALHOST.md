@@ -10,7 +10,19 @@ DIRECT_URL="postgresql://elearn:elearn_password@localhost:15432/elearn_db"
 REDIS_URL="redis://localhost:16379"
 ```
 
-## Start dependencies
+## Safe daily start
+
+Use this command for normal local development:
+
+```bash
+npm run dev:safe
+```
+
+It starts Postgres and Redis, generates Prisma Client, seeds demo data if the database is empty, creates a SQL backup when data exists, and then starts Next.js.
+
+Backups are saved in `backups/`.
+
+## Manual start dependencies
 
 ```bash
 docker compose up -d postgres redis
@@ -37,3 +49,5 @@ foreach ($d in $dirs) {
 ```bash
 npm run dev
 ```
+
+Do not run `docker compose down -v` unless you intentionally want to delete the local database volume.

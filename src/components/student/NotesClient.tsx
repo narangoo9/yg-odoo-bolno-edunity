@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   DndContext, DragOverlay, closestCorners, KeyboardSensor, PointerSensor,
   useSensor, useSensors, type DragStartEvent, type DragOverEvent, type DragEndEvent,
@@ -13,12 +13,13 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Plus, Trash2, CheckSquare, Square,
   Palette, X, GripVertical, Camera, MoreHorizontal,
-  Trophy, Zap, Gift, Check,
+  Trophy, Zap, Gift, Check, Loader2,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { MascotImage, type MascotVariant } from "@/components/brand/MascotImage";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { toast } from "@/components/ui/toaster";
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 type CheckItem = { id: string; text: string; done: boolean };
@@ -34,6 +35,7 @@ type NoteCard = {
   color: NoteColor;
   coverImage?: string;
   tags: string[];
+  orderIndex?: number;
   createdAt: Date;
 };
 
@@ -107,66 +109,59 @@ const COL_MASCOT: Record<BoardCol, MascotVariant> = {
 
 const COLS: BoardCol[] = ["todo", "inprogress", "review", "done"];
 
-const SAMPLE: NoteCard[] = [
-  {
-    id: "1", col: "inprogress", title: "UI/UX Дизайны тэмдэглэл", color: "violet",
-    content: "Өнөөдрийн хичээлийн гол зарчмууд",
-    checklist: [
-      { id: "c1", text: "Gestalt зарчмуудыг судлах", done: true },
-      { id: "c2", text: "Wireframe дадлага хийх", done: false },
-      { id: "c3", text: "Don Norman-ий ном уншах", done: false },
-    ],
-    tags: ["дизайн", "ux"], createdAt: new Date(),
-  },
-  {
-    id: "2", col: "todo", title: "Web хөгжүүлэлт тохиргоо", color: "amber",
-    content: "Энэ долоо хоногийн төслийн тохиргоо",
-    checklist: [
-      { id: "c4", text: "Next.js төсөл", done: true },
-      { id: "c5", text: "Tailwind CSS", done: true },
-      { id: "c6", text: "Нэвтрэх систем", done: false },
-    ],
-    tags: ["код"], createdAt: new Date(),
-  },
-  {
-    id: "3", col: "done", title: "Суралцах зорилго", color: "emerald",
-    content: "Энэ сард 5 курс дүүргэж streak хадгалах.",
-    checklist: [
-      { id: "c8", text: "React курст бүртгүүлэх", done: true },
-      { id: "c9", text: "1-5 хичээл дүүргэх", done: true },
-    ],
-    tags: ["зорилго"], createdAt: new Date(),
-  },
-  {
-    id: "4", col: "review", title: "Мэдээллийн сан дизайн", color: "sky",
-    content: "Capstone илгээхийн өмнө схем шалгах",
-    checklist: [
-      { id: "c10", text: "Хүснэгтийг нормалчлах", done: true },
-      { id: "c11", text: "Индекс нэмэх", done: false },
-      { id: "c12", text: "Индекс шалгах", done: false },
-      { id: "c13", text: "Менторт шалгуулах", done: false },
-    ],
-    tags: ["өгөгдөл", "backend"], createdAt: new Date(),
-  },
-  {
-    id: "5", col: "todo", title: "Learn TypeScript", color: "sky",
-    content: "Basic types and composition",
-    checklist: [
-      { id: "c14", text: "Watch lesson 1", done: false },
-      { id: "c15", text: "Practice examples", done: false },
-    ],
-    tags: ["coding"], createdAt: new Date(),
-  },
-  {
-    id: "6", col: "inprogress", title: "Responsive Layout", color: "violet",
-    content: "Build mobile-first layout",
-    checklist: [
-      { id: "c16", text: "Create grid system", done: false },
-      { id: "c17", text: "Test on mobile", done: false },
-    ],
-    tags: ["design"], createdAt: new Date(),
-  },
-];
+// ── API HELPERS ────────────────────────────────────────────────────────────────
+async function apiCreateNote(data: Omit<NoteCard, "id" | "createdAt">): Promise<NoteCard | null> {
+  try {
+    const res = await fetch("/api/v1/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...data, checklist: data.checklist }),
+    });
+    const json = await res.json();
+    if (!json.success) return null;
+    return dbToCard(json.data);
+  } catch {
+    return null;
+  }
+}
+
+async function apiUpdateNote(id: string, patch: Partial<Omit<NoteCard, "id" | "createdAt">>): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/v1/notes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const json = await res.json();
+    return json.success === true;
+  } catch {
+    return false;
+  }
+}
+
+async function apiDeleteNote(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/v1/notes/${id}`, { method: "DELETE" });
+    const json = await res.json();
+    return json.success === true;
+  } catch {
+    return false;
+  }
+}
+
+function dbToCard(raw: Record<string, unknown>): NoteCard {
+  return {
+    id: raw.id as string,
+    col: raw.col as BoardCol,
+    title: raw.title as string,
+    content: raw.content as string,
+    checklist: (raw.checklist as CheckItem[]) ?? [],
+    color: raw.color as NoteColor,
+    coverImage: (raw.coverImage as string | null) ?? undefined,
+    tags: (raw.tags as string[]) ?? [],
+    createdAt: new Date(raw.createdAt as string),
+  };
+}
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
 function getCardMascot(tags: string[]): MascotVariant {
@@ -217,7 +212,6 @@ function SortableCheckItem({
         isDragging && "opacity-40 scale-95 bg-accent",
       )}
     >
-      {/* Drag handle */}
       <button
         {...attributes}
         {...listeners}
@@ -227,7 +221,6 @@ function SortableCheckItem({
         <GripVertical size={11} className="text-muted-foreground" />
       </button>
 
-      {/* Checkbox */}
       <button onClick={onToggle} className="shrink-0">
         {item.done
           ? <CheckSquare size={13} className="text-emerald-500 fill-emerald-500" />
@@ -235,7 +228,6 @@ function SortableCheckItem({
         }
       </button>
 
-      {/* Text / editable */}
       {editing ? (
         <input
           autoFocus
@@ -260,7 +252,6 @@ function SortableCheckItem({
         </button>
       )}
 
-      {/* Delete */}
       <button
         onClick={onDelete}
         className="shrink-0 opacity-0 group-hover/check:opacity-60 hover:!opacity-100 transition-opacity"
@@ -317,76 +308,6 @@ function AddCheckItem({ onAdd }: { onAdd: (text: string) => void }) {
       <button onClick={() => { setVal(""); setOpen(false); }}>
         <X size={10} className="text-muted-foreground hover:text-foreground transition-colors" />
       </button>
-    </div>
-  );
-}
-
-// ── DAILY GOALS CARD ───────────────────────────────────────────────────────────
-function DailyGoalsCard() {
-  const { t } = useLanguage();
-  const [goals, setGoals] = useState([
-    { id: "g1", text: "Web Dev Setup-ийн 1 дэд даалгавар хийх", done: true },
-    { id: "g2", text: "UI/UX Design Notes унших дуусгах", done: false },
-  ]);
-
-  const done  = goals.filter(g => g.done).length;
-  const total = goals.length;
-  const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-r from-amber-50 via-card to-amber-50/30 dark:from-amber-900/20 dark:via-card dark:to-amber-900/10 p-4 mb-5">
-      <div className="flex items-center gap-4">
-        <div className="relative shrink-0">
-          <MascotImage variant="fire" size={60} className="animate-float drop-shadow-md" />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <h2 className="text-[14px] font-black text-foreground mb-0.5">{t("notes.dailyGoals")}</h2>
-          <p className="text-[11px] text-muted-foreground mb-2.5">
-            {t("notes.dailyGoalsDesc")}
-          </p>
-          <div className="space-y-1">
-            {goals.map(g => (
-              <button
-                key={g.id}
-                onClick={() =>
-                  setGoals(prev => prev.map(i => i.id === g.id ? { ...i, done: !i.done } : i))
-                }
-                className="flex items-center gap-2 w-full text-left"
-              >
-                {g.done
-                  ? <CheckSquare size={14} className="text-emerald-500 fill-emerald-500 shrink-0" />
-                  : <Square      size={14} className="text-muted-foreground/40 shrink-0" />
-                }
-                <span className={cn(
-                  "text-[12px] transition-all",
-                  g.done ? "line-through text-muted-foreground/40" : "text-foreground/80",
-                )}>
-                  {g.text}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="shrink-0 flex flex-col items-center gap-1">
-          <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800/40 flex flex-col items-center justify-center">
-            <span className="text-[16px] font-black text-amber-600 dark:text-amber-400 leading-none">{done}</span>
-            <span className="text-[8px] text-amber-500 dark:text-amber-500 font-semibold">/{total}</span>
-          </div>
-          <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400">{t("notes.taskLabel")}</span>
-        </div>
-      </div>
-
-      <div className="mt-3 flex items-center gap-2">
-        <div className="flex-1 h-1.5 bg-amber-100 dark:bg-amber-900/30 rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all duration-500"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{pct}%</span>
-      </div>
     </div>
   );
 }
@@ -472,7 +393,6 @@ function CardItem({
   const [showAllChecks, setShowAllChecks] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Sensors for inner checklist DnD (short drag distance)
   const checkSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -524,7 +444,6 @@ function CardItem({
       COLOR_MAP[card.color],
       isDragging && "opacity-60 rotate-2 scale-105 shadow-xl shadow-violet-200/50 dark:shadow-violet-900/40",
     )}>
-      {/* Cover image */}
       {card.coverImage && (
         <div className="relative h-28 bg-muted">
           <img src={card.coverImage} alt="cover" className="w-full h-full object-cover" />
@@ -538,7 +457,6 @@ function CardItem({
       )}
 
       <div className="p-3.5 space-y-2.5">
-        {/* Title row */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             {editTitle ? (
@@ -560,7 +478,6 @@ function CardItem({
             )}
           </div>
 
-          {/* Context menu */}
           <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
             <div className="relative">
               <button
@@ -614,7 +531,6 @@ function CardItem({
           </div>
         </div>
 
-        {/* Content */}
         {(card.content !== undefined) && (
           <textarea
             value={card.content}
@@ -625,7 +541,6 @@ function CardItem({
           />
         )}
 
-        {/* Tags */}
         {card.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {card.tags.map(tag => (
@@ -639,10 +554,8 @@ function CardItem({
           </div>
         )}
 
-        {/* Checklist */}
         {totalCount > 0 && (
           <div className="space-y-1">
-            {/* Progress */}
             <div className="flex items-center gap-2">
               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div
@@ -658,7 +571,6 @@ function CardItem({
               </span>
             </div>
 
-            {/* Sortable checklist — nested DndContext */}
             <DndContext
               id={`checklist-${card.id}`}
               sensors={checkSensors}
@@ -681,24 +593,19 @@ function CardItem({
               </SortableContext>
             </DndContext>
 
-            {/* Show more / less toggle */}
             {card.checklist.length > 3 && (
               <button
                 onClick={() => setShowAllChecks(v => !v)}
                 className="text-[10px] text-muted-foreground hover:text-primary transition-colors pl-[22px]"
               >
-                {showAllChecks
-                  ? "Хаах ↑"
-                  : `+${card.checklist.length - 3} more`}
+                {showAllChecks ? "Хаах ↑" : `+${card.checklist.length - 3} more`}
               </button>
             )}
           </div>
         )}
 
-        {/* Add checklist item */}
         <AddCheckItem onAdd={addCheckItem} />
 
-        {/* Bottom: mascot */}
         <div className="flex items-center justify-end pt-0.5">
           <MascotImage
             variant={cardMascot}
@@ -743,18 +650,35 @@ function SortableCardItem({
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────────
 export function NotesClient({ userId }: { userId: string }) {
   const { t } = useLanguage();
-  const [notes,     setNotes]     = useState<NoteCard[]>(SAMPLE);
+  const [notes,     setNotes]     = useState<NoteCard[]>([]);
+  const [loading,   setLoading]   = useState(true);
   const [activeId,  setActiveId]  = useState<string | null>(null);
   const [overColId, setOverColId] = useState<BoardCol | null>(null);
+
+  // Debounce timer for content/title edits
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Load notes from API on mount
+  useEffect(() => {
+    if (!userId) { setLoading(false); return; }
+    fetch("/api/v1/notes")
+      .then(r => r.json())
+      .then(json => {
+        if (json.success) setNotes((json.data as Record<string, unknown>[]).map(dbToCard));
+      })
+      .catch(() => toast({ type: "error", title: "Тэмдэглэл ачааллахад алдаа гарлаа" }))
+      .finally(() => setLoading(false));
+  }, [userId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const addNote = (col: BoardCol) => {
-    setNotes(prev => [...prev, {
-      id:        `note-${Date.now()}`,
+  const addNote = useCallback(async (col: BoardCol) => {
+    const optimisticId = `temp-${Date.now()}`;
+    const newCard: NoteCard = {
+      id:        optimisticId,
       col,
       title:     "New Card",
       content:   "",
@@ -762,14 +686,47 @@ export function NotesClient({ userId }: { userId: string }) {
       color:     "white",
       tags:      [],
       createdAt: new Date(),
-    }]);
-  };
+    };
+    setNotes(prev => [...prev, newCard]);
 
-  const updateNote = (id: string, patch: Partial<NoteCard>) =>
+    const created = await apiCreateNote({ col, title: "New Card", content: "", checklist: [], color: "white", tags: [], orderIndex: 0 });
+    if (created) {
+      setNotes(prev => prev.map(n => n.id === optimisticId ? created : n));
+    } else {
+      setNotes(prev => prev.filter(n => n.id !== optimisticId));
+      toast({ type: "error", title: "Карт үүсгэхэд алдаа гарлаа" });
+    }
+  }, []);
+
+  const updateNote = useCallback((id: string, patch: Partial<NoteCard>) => {
     setNotes(prev => prev.map(n => n.id === id ? { ...n, ...patch } : n));
 
-  const deleteNote = (id: string) =>
+    // Debounce API call for text fields; immediate for structural fields
+    const isStructural = patch.col !== undefined || patch.color !== undefined ||
+      patch.coverImage !== undefined || patch.tags !== undefined ||
+      patch.checklist !== undefined || patch.orderIndex !== undefined;
+
+    if (isStructural) {
+      apiUpdateNote(id, patch).catch(() =>
+        toast({ type: "error", title: "Өөрчлөлт хадгалахад алдаа гарлаа" })
+      );
+    } else {
+      if (saveTimers.current[id]) clearTimeout(saveTimers.current[id]);
+      saveTimers.current[id] = setTimeout(() => {
+        apiUpdateNote(id, patch).catch(() =>
+          toast({ type: "error", title: "Өөрчлөлт хадгалахад алдаа гарлаа" })
+        );
+      }, 600);
+    }
+  }, []);
+
+  const deleteNote = useCallback(async (id: string) => {
     setNotes(prev => prev.filter(n => n.id !== id));
+    const ok = await apiDeleteNote(id);
+    if (!ok) {
+      toast({ type: "error", title: "Устгахад алдаа гарлаа" });
+    }
+  }, []);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -808,16 +765,27 @@ export function NotesClient({ userId }: { userId: string }) {
     const overNote   = notes.find(n => n.id === over.id);
     if (!activeNote) return;
 
+    let reordered = notes;
+
     if (overNote && activeNote.col === overNote.col && active.id !== over.id) {
       setNotes(prev => {
         const colNotes = prev.filter(n => n.col === activeNote.col);
         const rest     = prev.filter(n => n.col !== activeNote.col);
-        return [...rest, ...arrayMove(
+        reordered = [...rest, ...arrayMove(
           colNotes,
           colNotes.findIndex(n => n.id === active.id),
           colNotes.findIndex(n => n.id === over.id),
         )];
+        return reordered;
       });
+    }
+
+    // Persist column/order changes
+    const movedNote = notes.find(n => n.id === active.id);
+    if (movedNote) {
+      apiUpdateNote(active.id as string, { col: movedNote.col }).catch(() =>
+        toast({ type: "error", title: "Байршил хадгалахад алдаа гарлаа" })
+      );
     }
   };
 
@@ -826,6 +794,14 @@ export function NotesClient({ userId }: { userId: string }) {
   const doneTasks  = notes.flatMap(n => n.checklist).filter(c => c.done).length;
   const donePct    = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
   const doneCards  = notes.filter(n => n.col === "done").length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={28} className="animate-spin text-primary/60" />
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-up">
@@ -868,9 +844,6 @@ export function NotesClient({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* ── DAILY GOALS ── */}
-      <DailyGoalsCard />
-
       {/* ── KANBAN BOARD ── */}
       <DndContext
         id="notes-board"
@@ -895,7 +868,6 @@ export function NotesClient({ userId }: { userId: string }) {
                   isTarget && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background",
                 )}
               >
-                {/* Column header */}
                 <div className={cn("flex items-center justify-between px-3 py-2.5 rounded-2xl mb-3", cfg.headerBg)}>
                   <div className="flex items-center gap-2">
                     <div className={cn("w-2 h-2 rounded-full shrink-0", cfg.dot)} />
@@ -915,7 +887,6 @@ export function NotesClient({ userId }: { userId: string }) {
                   </div>
                 </div>
 
-                {/* Cards */}
                 <SortableContext
                   id={col}
                   items={colNotes.map(n => n.id)}
@@ -931,7 +902,6 @@ export function NotesClient({ userId }: { userId: string }) {
                       />
                     ))}
 
-                    {/* Empty state */}
                     {colNotes.length === 0 && (
                       <button
                         onClick={() => addNote(col)}
@@ -969,7 +939,6 @@ export function NotesClient({ userId }: { userId: string }) {
           })}
         </div>
 
-        {/* Board-level drag overlay */}
         <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.16,1,0.3,1)" }}>
           {activeNote && (
             <div className="rotate-2 scale-105 shadow-2xl shadow-violet-200/50 dark:shadow-violet-900/40 opacity-95">

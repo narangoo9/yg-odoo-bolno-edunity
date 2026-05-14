@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Loader2, BookOpen, Lock } from "lucide-react";
+import { Loader2, BookOpen, PlayCircle } from "lucide-react";
 import { enrollCourse } from "@/modules/courses/application/actions";
 import { toast } from "@/components/ui/toaster";
 
@@ -12,7 +11,6 @@ interface EnrollButtonProps {
 }
 
 export function EnrollButton({ courseId, hasCourseAccess }: EnrollButtonProps) {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   const handleEnroll = async () => {
@@ -22,17 +20,6 @@ export function EnrollButton({ courseId, hasCourseAccess }: EnrollButtonProps) {
 
       if (result && "error" in result) {
         toast({ type: "error", title: "Алдаа", description: result.error as string });
-        return;
-      }
-
-      if (result && "requiresUpgrade" in result) {
-        toast({
-          type: "info",
-          title: "Upgrade шаардлагатай",
-          description: "Энэ хичээлийг үзэхийн тулд Premium эсвэл Pro план авна уу.",
-        });
-        router.push("/student/upgrade");
-        return;
       }
     } catch {
       toast({ type: "error", title: "Алдаа гарлаа", description: "Дахин оролдоно уу" });
@@ -43,17 +30,25 @@ export function EnrollButton({ courseId, hasCourseAccess }: EnrollButtonProps) {
 
   return (
     <button
+      type="button"
       onClick={handleEnroll}
       disabled={loading}
-      className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-500 active:scale-[.99] transition-all disabled:opacity-60"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 font-semibold text-white transition-all hover:bg-violet-500 active:scale-[.99] disabled:opacity-60"
     >
       {loading ? (
-        <><Loader2 size={16} className="animate-spin" /> Бүртгэж байна...</>
+        <>
+          <Loader2 size={16} className="animate-spin" /> Бүртгэж байна...
+        </>
       ) : hasCourseAccess ? (
-        <><BookOpen size={16} /> Курст бүртгүүлэх</>
+        <>
+          <BookOpen size={16} /> Курс эхлүүлэх
+        </>
       ) : (
-        <><Lock size={16} /> Upgrade хийж нэвтрэх</>
+        <>
+          <PlayCircle size={16} /> Free preview эхлүүлэх
+        </>
       )}
     </button>
   );
 }
+

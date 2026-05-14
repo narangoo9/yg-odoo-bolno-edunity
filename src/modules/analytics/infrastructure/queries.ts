@@ -195,7 +195,7 @@ export async function getInstructorCourseStats(instructorId: string) {
   const courses = await db.course.findMany({
     where: { instructorId },
     include: {
-      _count: { select: { enrollments: true, reviews: true } },
+      _count: { select: { enrollments: true, reviews: true, sections: true } },
       reviews: { select: { rating: true } },
       enrollments: {
         select: { status: true },
@@ -209,6 +209,10 @@ export async function getInstructorCourseStats(instructorId: string) {
     title: c.title,
     slug: c.slug,
     status: c.status,
+    coverImage: c.coverImage,
+    thumbnailUrl: c.thumbnailUrl,
+    sourceType: c.sourceType,
+    sectionCount: c._count.sections,
     enrollmentCount: c._count.enrollments,
     completedCount: c.enrollments.filter((e) => e.status === "COMPLETED").length,
     reviewCount: c._count.reviews,

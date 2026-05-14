@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const imageUrlSchema = z.string().url().or(z.string().startsWith("/uploads/"));
+const youtubeIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{11}$/, "YouTube video ID is required");
 
 export const createCourseSchema = z.object({
   title: z.string().min(5, "Гарчиг 5-аас дээш тэмдэгттэй байх ёстой").max(150),
@@ -70,6 +71,70 @@ export const reorderLessonsSchema = z.object({
   ),
 });
 
+export const lessonSectionSchema = z.object({
+  lessonId: z.string().cuid(),
+  title: z.string().min(2).max(150),
+  description: z.string().max(2000).optional().or(z.literal("")),
+  order: z.number().int().min(0).optional(),
+  youtubeId: youtubeIdSchema,
+  startSeconds: z.number().int().min(0),
+  endSeconds: z.number().int().min(1),
+  taskTitle: z.string().max(160).optional().or(z.literal("")),
+  taskDescription: z.string().max(2000).optional().or(z.literal("")),
+  pdfUrl: z.string().url().or(z.string().startsWith("/")).optional().or(z.literal("")),
+  resourceUrl: z.string().url().or(z.string().startsWith("/")).optional().or(z.literal("")),
+}).refine((data) => data.endSeconds > data.startSeconds, {
+  path: ["endSeconds"],
+  message: "endSeconds must be greater than startSeconds",
+});
+
+export const completeLessonSectionSchema = z.object({
+  sectionId: z.string().cuid(),
+});
+
+export const youtubeCourseSectionSchema = z.object({
+  title: z.string().min(1, "Section title is required").max(150),
+  order: z.number().int().min(1),
+  startSeconds: z.number().int().min(0),
+  endSeconds: z.number().int().min(1).nullable().optional(),
+}).refine((data) => data.endSeconds == null || data.endSeconds > data.startSeconds, {
+  path: ["endSeconds"],
+  message: "endSeconds must be greater than startSeconds",
+});
+
+export const createYouTubeCourseSchema = z.object({
+  sourceYoutubeUrl: z.string().min(1),
+  sourceYoutubeId: youtubeIdSchema,
+  title: z.string().min(1, "Course title is required").max(150),
+  coverImage: z.string().url(),
+  durationSeconds: z.number().int().min(1).nullable().optional(),
+  sections: z.array(youtubeCourseSectionSchema).min(1, "At least one section is required"),
+}).superRefine((data, ctx) => {
+  const starts = new Set<number>();
+  const sorted = [...data.sections].sort((a, b) => a.startSeconds - b.startSeconds);
+
+  data.sections.forEach((section, index) => {
+    if (starts.has(section.startSeconds)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sections", index, "startSeconds"],
+        message: "Duplicate start time",
+      });
+    }
+    starts.add(section.startSeconds);
+  });
+
+  data.sections.forEach((section, index) => {
+    if (section.startSeconds !== sorted[index]?.startSeconds) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sections"],
+        message: "Sections must be sorted by start time",
+      });
+    }
+  });
+});
+
 export const enrollCourseSchema = z.object({
   courseId: z.string().cuid(),
   couponCode: z.string().optional(),
@@ -81,3 +146,5 @@ export type CreateModuleInput = z.infer<typeof createModuleSchema>;
 export type CreateLessonInput = z.infer<typeof createLessonSchema>;
 export type UpdateLessonInput = z.infer<typeof updateLessonSchema>;
 export type EnrollCourseInput = z.infer<typeof enrollCourseSchema>;
+export type LessonSectionInput = z.infer<typeof lessonSectionSchema>;
+export type CreateYouTubeCourseInput = z.infer<typeof createYouTubeCourseSchema>;

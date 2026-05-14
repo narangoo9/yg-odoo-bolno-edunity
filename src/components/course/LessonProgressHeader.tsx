@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LessonRef {
@@ -16,6 +16,8 @@ interface LessonProgressHeaderProps {
   isCompleted: boolean;
   isPending: boolean;
   onMarkComplete: () => void;
+  showChat?: boolean;
+  onToggleChat?: () => void;
 }
 
 export function LessonProgressHeader({
@@ -27,6 +29,8 @@ export function LessonProgressHeader({
   isCompleted,
   isPending,
   onMarkComplete,
+  showChat,
+  onToggleChat,
 }: LessonProgressHeaderProps) {
   const dotCount = Math.min(totalLessons, 12);
 
@@ -83,7 +87,7 @@ export function LessonProgressHeader({
           </div>
         </div>
 
-        {/* Right: status + next */}
+        {/* Right: status + next + chat toggle */}
         <div className="flex shrink-0 items-center gap-2">
           {isCompleted ? (
             <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-600 ring-1 ring-emerald-200/80">
@@ -108,6 +112,22 @@ export function LessonProgressHeader({
               Дараагийн хичээл <ArrowRight size={11} />
             </Link>
           ) : null}
+
+          {onToggleChat && (
+            <button
+              onClick={onToggleChat}
+              title={showChat ? "Chat хаах" : "Chat нээх"}
+              className={cn(
+                "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold shadow-sm transition-all active:scale-95",
+                showChat
+                  ? "border-violet-300 bg-violet-600 text-white hover:bg-violet-500"
+                  : "border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700",
+              )}
+            >
+              <MessageCircle size={11} />
+              Chat
+            </button>
+          )}
         </div>
       </div>
     </div>

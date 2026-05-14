@@ -7,36 +7,49 @@ const globalForPrisma = globalThis as unknown as {
   prismaPool: Pool | undefined;
 };
 
-const pool =
-  globalForPrisma.prismaPool ??
-  new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 20,
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 3_000,
-    allowExitOnIdle: false,
-  });
+/**
+ * Анхдагч: PrismaClient (Neon / cloud Postgres-ийн pooled DATABASE_URL).
+ * `PRISMA_USE_PG_ADAPTER=true` бол @prisma/adapter-pg + `pg` Pool (тусгай тохиргоо).
+ */
+function createPrismaClient(): PrismaClient {
+  const usePgAdapter = process.env.PRISMA_USE_PG_ADAPTER === "true";
 
-const adapter = new PrismaPg(pool);
+  if (usePgAdapter) {
+    const pool =
+      globalForPrisma.prismaPool ??
+      new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 20,
+        idleTimeoutMillis: 30_000,
+        connectionTimeoutMillis: 3_000,
+        allowExitOnIdle: false,
+      });
 
-export const db =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    adapter,
-    log:
-      process.env.NODE_ENV === "development"
-        ? ["warn", "error"]
-        : ["error"],
+    if (process.env.NODE_ENV !== "production") {
+      globalForPrisma.prismaPool = pool;
+    }
+
+    const adapter = new PrismaPg(pool);
+    return new PrismaClient({
+      adapter,
+      log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    });
+  }
+
+  return new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
+}
+
+export const db = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = db;
-  globalForPrisma.prismaPool = pool;
 }
 
-// In serverless environments, connections are managed by the pool automatically.
-// This handler only matters for long-running local dev sessions.
 process.on("beforeExit", async () => {
   await db.$disconnect();
-  await pool.end();
+  if (globalForPrisma.prismaPool) {
+    await globalForPrisma.prismaPool.end();
+  }
 });

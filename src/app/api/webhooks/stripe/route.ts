@@ -8,31 +8,11 @@ import {
   revalidateUserNotifications,
   revalidateUserSidebar,
 } from "@/lib/dashboard-cache";
-
-// Map Stripe price IDs to our SubscriptionPlan enum values
-function planFromPriceId(priceId: string): "STANDARD" | "PREMIUM" | "PRO" {
-  const map: Record<string, "STANDARD" | "PREMIUM" | "PRO"> = {
-    [process.env.STRIPE_PRICE_STANDARD ?? ""]: "STANDARD",
-    [process.env.STRIPE_PRICE_PREMIUM ?? ""]: "PREMIUM",
-    [process.env.STRIPE_PRICE_PRO ?? ""]: "PRO",
-  };
-  return map[priceId] ?? "STANDARD";
-}
-
-function stripeStatusToOurs(
-  status: string
-): "ACTIVE" | "CANCELLED" | "PAST_DUE" | "TRIALING" | "EXPIRED" {
-  const map: Record<string, "ACTIVE" | "CANCELLED" | "PAST_DUE" | "TRIALING" | "EXPIRED"> = {
-    active: "ACTIVE",
-    canceled: "CANCELLED",
-    past_due: "PAST_DUE",
-    trialing: "TRIALING",
-    unpaid: "PAST_DUE",
-    incomplete: "PAST_DUE",
-    incomplete_expired: "EXPIRED",
-  };
-  return map[status] ?? "ACTIVE";
-}
+import {
+  planFromStripePriceId,
+  stripeStatusToSubscriptionStatus,
+  syncStripeSubscription,
+} from "@/lib/stripe/subscription-sync";
 
 export async function POST(req: NextRequest) {
   const stripe = getStripe();
@@ -201,28 +181,11 @@ export async function POST(req: NextRequest) {
           const stripeSubscription = await stripe.subscriptions.retrieve(
             session.subscription as string
           );
-          const priceId = stripeSubscription.items.data[0].price.id;
-          const plan = planFromPriceId(priceId);
-
-          await db.subscription.upsert({
-            where: { userId },
-            create: {
-              userId,
-              plan,
-              status: "ACTIVE",
-              stripeSubscriptionId: stripeSubscription.id,
-              stripePriceId: priceId,
-              currentPeriodStart: new Date(stripeSubscription.current_period_start * 1000),
-              currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
-            },
-            update: {
-              plan,
-              status: "ACTIVE",
-              stripeSubscriptionId: stripeSubscription.id,
-              stripePriceId: priceId,
-              currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
-              cancelAtPeriodEnd: false,
-            },
+          const { plan } = await syncStripeSubscription({
+            userId,
+            stripeCustomerId: typeof session.customer === "string" ? session.customer : session.customer?.id,
+            stripeSubscription,
+            metadataPlan: meta.plan,
           });
 
           await db.notification.create({
@@ -243,7 +206,7 @@ export async function POST(req: NextRequest) {
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
         const priceId = sub.items.data[0]?.price.id ?? "";
-        const plan = planFromPriceId(priceId);
+        const plan = planFromStripePriceId(priceId);
         const subscriptions = await db.subscription.findMany({
           where: { stripeSubscriptionId: sub.id },
           select: { userId: true },
@@ -253,7 +216,7 @@ export async function POST(req: NextRequest) {
           where: { stripeSubscriptionId: sub.id },
           data: {
             plan,
-            status: stripeStatusToOurs(sub.status),
+            status: stripeStatusToSubscriptionStatus(sub.status),
             stripePriceId: priceId,
             currentPeriodEnd: new Date(sub.current_period_end * 1000),
             cancelAtPeriodEnd: sub.cancel_at_period_end,

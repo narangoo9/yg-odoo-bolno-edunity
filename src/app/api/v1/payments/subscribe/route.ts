@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getStripe } from "@/lib/stripe";
 import { getAppUrl } from "@/lib/app-url";
+import { db } from "@/lib/db";
 
 /* Maps plan+billing → Stripe price ID.
    Falls back to STUDENT/INSTRUCTOR IDs if plan-specific IDs are not set. */
@@ -51,12 +52,17 @@ export async function POST(req: NextRequest) {
 
     const stripe = getStripe();
     const appUrl = getAppUrl();
+    const user = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: { stripeCustomerId: true },
+    });
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/student?subscription=success`,
+      customer: user?.stripeCustomerId ?? undefined,
+      success_url: `${appUrl}/api/v1/payments/subscribe/confirm?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/student/upgrade?subscription=cancelled`,
       metadata: {
         userId: session.user.id,

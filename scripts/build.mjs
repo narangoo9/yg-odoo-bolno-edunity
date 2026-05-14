@@ -35,6 +35,11 @@ if (generate.status !== 0) {
       "[build] Prisma generate hit a Windows file-lock EPERM, but an existing generated client is present. Continuing to Next build.",
     );
     console.warn("[build] Close running dev servers and rerun `npm run db:generate` if Prisma schema changed.");
+  } else if (process.platform === "win32" && output.trim().length === 0 && hasGeneratedPrismaClient()) {
+    console.warn(
+      "[build] Prisma generate exited without output on Windows, but an existing generated client is present. Continuing to Next build.",
+    );
+    console.warn("[build] Run `npx prisma generate` directly if the Next build reports Prisma client issues.");
   } else {
     process.stdout.write(generate.stdout ?? "");
     process.stderr.write(generate.stderr ?? "");

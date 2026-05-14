@@ -21,6 +21,8 @@ import { MascotImage, type MascotVariant } from "@/components/brand/MascotImage"
 import { hasActiveCourseAccess } from "@/lib/subscription-access";
 import { LearningArtwork } from "@/components/course/LearningArtwork";
 import { HeroBanner } from "@/components/dashboard/HeroBanner";
+import { getStripe } from "@/lib/stripe";
+import { syncLatestStripeSubscriptionForUser } from "@/lib/stripe/subscription-sync";
 import type { ElementType } from "react";
 
 export const metadata: Metadata = { title: "Dashboard - EduNity" };
@@ -74,7 +76,11 @@ const EMPTY_STATES: {
 
 const COURSE_MASCOTS: MascotVariant[] = ["book", "laptop", "wave", "thinking"];
 
-export default async function StudentDashboardPage() {
+interface PageProps {
+  searchParams?: Promise<{ subscription?: string }>;
+}
+
+export default async function StudentDashboardPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
@@ -85,6 +91,30 @@ export default async function StudentDashboardPage() {
       INSTRUCTOR: "/instructor",
     };
     redirect(roleMap[session.user.role] ?? "/student");
+  }
+
+  const sp = await searchParams;
+
+  const existingSubscription = await db.subscription.findUnique({
+    where: { userId: session.user.id },
+    select: { plan: true, status: true },
+  }).catch(() => null);
+
+  if (sp?.subscription === "success" && (!existingSubscription || existingSubscription.status !== "ACTIVE")) {
+    const user = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: { email: true, stripeCustomerId: true },
+    }).catch(() => null);
+
+    await syncLatestStripeSubscriptionForUser({
+      stripe: getStripe(),
+      userId: session.user.id,
+      email: user?.email ?? session.user.email,
+      stripeCustomerId: user?.stripeCustomerId,
+    }).catch((error) => {
+      console.error("Subscription return sync failed:", error);
+      return null;
+    });
   }
 
   const [stats, enrollments, recommendedResult, subscription] = await Promise.all([
@@ -339,13 +369,7 @@ export default async function StudentDashboardPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {recommended.map((course, index) => {
-              const avgRating =
-                course.reviews.length > 0
-                  ? (
-                      course.reviews.reduce((sum, r) => sum + r.rating, 0) /
-                      course.reviews.length
-                    ).toFixed(1)
-                  : null;
+              const avgRating = course.averageRating > 0 ? course.averageRating.toFixed(1) : null;
 
               const levelColors: Record<string, string> = {
                 BEGINNER: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
@@ -408,7 +432,7 @@ export default async function StudentDashboardPage() {
                         <div className="flex items-center gap-0.5">
                           <Star size={11} className="fill-amber-400 text-amber-400" />
                           <span className="text-[11px] font-bold text-foreground">{avgRating}</span>
-                          <span className="text-[10px] text-muted-foreground">({course.reviews.length})</span>
+                          <span className="text-[10px] text-muted-foreground">({course.reviewCount})</span>
                         </div>
                       )}
                       <div className="flex items-center gap-0.5 text-muted-foreground">

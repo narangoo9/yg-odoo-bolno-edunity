@@ -71,10 +71,7 @@ export async function getCourses(filters: CourseFilters = {}) {
       include: {
         instructor: { select: { id: true, name: true, avatarUrl: true } },
         category: { select: { id: true, name: true, slug: true } },
-        _count: { select: { enrollments: true, reviews: true, modules: true } },
-        reviews: {
-          select: { rating: true },
-        },
+        _count: { select: { enrollments: true, reviews: true, modules: true, sections: true } },
       },
     }),
     db.course.count({ where }),
@@ -82,12 +79,9 @@ export async function getCourses(filters: CourseFilters = {}) {
 
   const coursesWithRating = courses.map((course) => ({
     ...course,
-    averageRating:
-      course.reviews.length > 0
-        ? course.reviews.reduce((sum, r) => sum + r.rating, 0) / course.reviews.length
-        : 0,
+    averageRating: course.averageRating,
     enrollmentCount: course._count.enrollments,
-    reviewCount: course._count.reviews,
+    reviewCount: course.reviewCount || course._count.reviews,
   }));
 
   return {
@@ -132,9 +126,13 @@ export async function getCourseBySlug(slug: string, studentId?: string) {
               isFree: true,
               isLocked: true,
               orderIndex: true,
+              startTimeSeconds: true,
             },
           },
         },
+      },
+      sections: {
+        orderBy: { order: "asc" },
       },
       reviews: {
         where: { isApproved: true },
@@ -179,7 +177,10 @@ export async function getCourseById(id: string) {
           },
         },
       },
-      _count: { select: { enrollments: true, reviews: true } },
+      sections: {
+        orderBy: { order: "asc" },
+      },
+      _count: { select: { enrollments: true, reviews: true, sections: true } },
     },
   });
 }
@@ -208,6 +209,34 @@ export async function getStudentProgress(studentId: string, courseId: string) {
   };
 }
 
+export async function getCourseProgressSummary(studentId: string, courseId: string) {
+  const [completedProgress, lastAccessed, totalLessons] = await Promise.all([
+    db.progress.findMany({
+      where: { studentId, courseId, isCompleted: true },
+      select: { lessonId: true },
+    }),
+    db.progress.findFirst({
+      where: { studentId, courseId },
+      orderBy: { lastAccessedAt: "desc" },
+      include: {
+        lesson: { select: { id: true, title: true } },
+      },
+    }),
+    db.lesson.count({ where: { module: { courseId } } }),
+  ]);
+
+  const completedCount = completedProgress.length;
+  const percentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+
+  return {
+    completedLessonIds: completedProgress.map((p) => p.lessonId),
+    completedCount,
+    totalLessons,
+    percentage,
+    currentLesson: lastAccessed?.lesson ?? null,
+  };
+}
+
 export async function getInstructorCourses(instructorId: string) {
   return db.course.findMany({
     where: { instructorId },
@@ -228,7 +257,7 @@ export async function getStudentEnrolledCourses(studentId: string) {
         include: {
           instructor: { select: { id: true, name: true, avatarUrl: true } },
           category: { select: { id: true, name: true } },
-          _count: { select: { modules: true } },
+          _count: { select: { modules: true, sections: true } },
         },
       },
     },

@@ -65,8 +65,23 @@ export default async function InstructorCoursesPage() {
                 return (
                   <tr key={course.id} className="hover:bg-violet-50/50 dark:hover:bg-violet-500/5 transition-colors">
                     <td className="px-5 py-4">
-                      <p className="font-semibold text-foreground line-clamp-1">{course.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{course.reviewCount} сэтгэгдэл</p>
+                      <div className="flex items-center gap-3">
+                        {course.coverImage || course.thumbnailUrl ? (
+                          <img
+                            src={course.coverImage ?? course.thumbnailUrl ?? ""}
+                            alt=""
+                            className="h-12 w-20 rounded-md object-cover"
+                          />
+                        ) : null}
+                        <div>
+                          <p className="font-semibold text-foreground line-clamp-1">{course.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {course.sourceType === "YOUTUBE"
+                              ? `${course.sectionCount} sections`
+                              : `${course.reviewCount} сэтгэгдэл`}
+                          </p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-4 hidden md:table-cell">
                       <div className="flex items-center gap-1.5 text-foreground">

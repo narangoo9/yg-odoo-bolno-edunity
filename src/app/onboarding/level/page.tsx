@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { BarChart, Flame, Sprout } from "lucide-react";
 import { OnboardingCard } from "@/components/onboarding/OnboardingCard";
 import { OnboardingNavigation } from "@/components/onboarding/OnboardingNavigation";
@@ -10,24 +9,33 @@ import { OptionCard } from "@/components/onboarding/OptionCard";
 import { useOnboardingStore } from "@/lib/onboarding/onboardingStore";
 import type { SkillLevel } from "@/lib/onboarding/onboardingTypes";
 
-const LEVEL_OPTIONS: { id: SkillLevel; label: string; desc: string; icon: React.ReactNode }[] = [
+const LEVEL_OPTIONS: {
+  id: SkillLevel;
+  label: string;
+  desc: string;
+  icon: React.ReactNode;
+  iconBg: string;
+}[] = [
   {
     id: "beginner",
-    label: "Beginner",
-    desc: "Анхлан суралцагч",
-    icon: <Sprout size={18} className="text-emerald-500" />,
+    label: "Анхлан суралцагч",
+    desc: "Суурийг эхнээс суралцана",
+    icon: <Sprout size={20} className="text-emerald-600" />,
+    iconBg: "bg-emerald-100",
   },
   {
     id: "intermediate",
-    label: "Intermediate",
-    desc: "Суурь мэдлэгтэй",
-    icon: <BarChart size={18} className="text-amber-500" />,
+    label: "Дунд түвшин",
+    desc: "Суурь мэдлэгтэй, цааш ахина",
+    icon: <BarChart size={20} className="text-amber-600" />,
+    iconBg: "bg-amber-100",
   },
   {
     id: "advanced",
-    label: "Advanced",
+    label: "Ахисан түвшин",
     desc: "Илүү гүнзгий суралцах",
-    icon: <Flame size={18} className="text-orange-500" />,
+    icon: <Flame size={20} className="text-orange-600" />,
+    iconBg: "bg-orange-100",
   },
 ];
 
@@ -45,19 +53,17 @@ export default function LevelPage() {
 
   return (
     <OnboardingCard
+      headline="Чиний одоогийн түвшин?"
+      subheadline="Түвшин чинь ямар ч байсан зүгээр. Тохирох хичээлүүдийг санал болгоно."
       mascotVariant="thinking"
       mascotBubbleText="Түвшин чинь ямар ч байсан зүгээр. Би тохирох хичээлүүдийг санал болгоно."
-      mascotSize={160}
+      mascotSize={200}
       step={2}
     >
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        <h1 className="mb-1 text-xl font-black text-foreground">
-          Чиний одоогийн түвшин?
-        </h1>
-        <p className="mb-5 text-[13px] text-muted-foreground">
-          Нэг түвшинг сонгоно уу. Хожим солих боломжтой.
-        </p>
-      </motion.div>
+      <div className="mb-4">
+        <h2 className="text-[18px] font-bold text-gray-800">Нэг түвшин сонгоно уу</h2>
+        <p className="mt-1 text-[13px] text-gray-400">Хожим сольж болно.</p>
+      </div>
 
       <div className="mb-5 space-y-2.5">
         {LEVEL_OPTIONS.map((opt, i) => (
@@ -66,6 +72,7 @@ export default function LevelPage() {
             label={opt.label}
             description={opt.desc}
             icon={opt.icon}
+            iconBg={opt.iconBg}
             selected={selected === opt.id}
             onClick={() => setSelected(opt.id)}
             index={i}

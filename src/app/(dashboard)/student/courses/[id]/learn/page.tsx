@@ -2,9 +2,10 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { LearningPlayer } from "@/components/course/LearningPlayer";
+import { YouTubeCoursePlayer } from "@/components/course/YouTubeCoursePlayer";
 import { CourseReviews } from "@/components/course/CourseReviews";
-import { hasActiveCourseAccess } from "@/lib/subscription-access";
 import { trackLessonView } from "@/modules/courses/application/actions";
+import { canAccessLearningItem, getMarketplacePlan } from "@/lib/marketplace-access";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -28,20 +29,34 @@ export default async function LearnPage({ params, searchParams }: Props) {
     }),
   ]);
 
-  if (!hasActiveCourseAccess(subscription?.plan, subscription?.status)) {
-    redirect("/student/upgrade");
-  }
   if (!enrollment) redirect("/courses");
+  const accessPlan = getMarketplacePlan(subscription?.plan, subscription?.status);
 
   // Load full course with progress + reviews in parallel
   const [course, reviews, progress] = await Promise.all([
     db.course.findUnique({
       where: { id: courseId },
       include: {
+        sections: {
+          orderBy: { order: "asc" },
+        },
         modules: {
           orderBy: { orderIndex: "asc" },
           include: {
-            lessons: { orderBy: { orderIndex: "asc" } },
+            lessons: {
+              orderBy: { orderIndex: "asc" },
+              include: {
+                sections: {
+                  orderBy: { order: "asc" },
+                  include: {
+                    completions: {
+                      where: { studentId: session.user.id },
+                      select: { id: true, completedAt: true },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -59,12 +74,47 @@ export default async function LearnPage({ params, searchParams }: Props) {
   ]);
   if (!course) notFound();
 
+  if (course.sourceType === "YOUTUBE" && course.sourceYoutubeId) {
+    if (course.status !== "PUBLISHED" && course.instructorId !== session.user.id && session.user.role !== "SUPER_ADMIN") {
+      notFound();
+    }
+
+    return (
+      <YouTubeCoursePlayer
+        course={{
+          id: course.id,
+          title: course.title,
+          sourceYoutubeId: course.sourceYoutubeId,
+          sections: course.sections,
+        }}
+        accessPlan={accessPlan}
+      />
+    );
+  }
+
   // Determine active lesson
   const allLessons = course.modules.flatMap((m) => m.lessons);
   if (allLessons.length === 0) notFound();
 
   const activeLessonId = qLessonId ?? allLessons[0].id;
   const activeLesson = allLessons.find((l) => l.id === activeLessonId) ?? allLessons[0];
+  const activeLessonIndex = allLessons.findIndex((lesson) => lesson.id === activeLesson.id);
+
+  if (!canAccessLearningItem(accessPlan, activeLessonIndex, allLessons.length)) {
+    redirect("/student/upgrade");
+  }
+
+  const unlockedModules = course.modules.map((module) => ({
+    ...module,
+    lessons: module.lessons.map((lesson) => {
+      const lessonIndex = allLessons.findIndex((item) => item.id === lesson.id);
+
+      return {
+        ...lesson,
+        isLocked: !canAccessLearningItem(accessPlan, lessonIndex, allLessons.length),
+      };
+    }),
+  }));
 
   const completedIds = new Set(progress.filter((p) => p.isCompleted).map((p) => p.lessonId));
   const totalLessons = allLessons.length;
@@ -80,7 +130,7 @@ export default async function LearnPage({ params, searchParams }: Props) {
         course={{
           id: course.id,
           title: course.title,
-          modules: course.modules,
+          modules: unlockedModules,
         }}
         activeLesson={activeLesson}
         completedIds={Array.from(completedIds)}

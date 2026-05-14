@@ -174,9 +174,9 @@ function CourseCard({ course }: { course: Awaited<ReturnType<typeof getCourses>>
       className="glow-card group overflow-hidden rounded-2xl border border-border bg-card transition-all"
     >
       <div className="relative h-36 overflow-hidden bg-violet-100 dark:bg-violet-900/20">
-        {course.thumbnailUrl ? (
+        {course.coverImage || course.thumbnailUrl ? (
           <img
-            src={course.thumbnailUrl}
+            src={course.coverImage ?? course.thumbnailUrl ?? ""}
             alt={course.title}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
@@ -212,6 +212,11 @@ function CourseCard({ course }: { course: Awaited<ReturnType<typeof getCourses>>
           {course.duration && (
             <span className="flex items-center gap-1">
               <Clock size={11} />{formatDuration(course.duration * 60)}
+            </span>
+          )}
+          {course.sourceType === "YOUTUBE" && (
+            <span className="flex items-center gap-1">
+              <BookOpen size={11} />{course._count.sections} sections
             </span>
           )}
         </div>

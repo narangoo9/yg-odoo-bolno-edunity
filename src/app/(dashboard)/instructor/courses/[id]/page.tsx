@@ -26,7 +26,10 @@ export default async function CourseEditorPage({ params }: Props) {
       modules: {
         orderBy: { orderIndex: "asc" },
         include: {
-          lessons: { orderBy: { orderIndex: "asc" } },
+          lessons: {
+            orderBy: { orderIndex: "asc" },
+            include: { sections: { orderBy: { order: "asc" } } },
+          },
         },
       },
       _count: { select: { enrollments: true, reviews: true } },
@@ -104,6 +107,7 @@ export default async function CourseEditorPage({ params }: Props) {
             sourceCreditUrl: l.sourceCreditUrl,
             isFree: l.isFree,
             orderIndex: l.orderIndex,
+            sections: [],
           })),
         }))}
       />

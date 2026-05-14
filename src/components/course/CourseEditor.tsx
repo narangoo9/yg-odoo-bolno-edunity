@@ -8,14 +8,14 @@ import {
 } from "lucide-react";
 import {
   createModule, deleteModule, createLesson, updateLesson, deleteLesson,
-  fixZeroTimeSegments, publishCourse, unpublishCourse, updateCourse,
+  fixZeroTimeSegments, publishCourse, unpublishCourse, updateCourse, createLessonSection,
 } from "@/modules/courses/application/actions";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/index";
 import { toast } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 import { ImageUploadField } from "@/components/forms/ImageUploadField";
-import { isValidYouTubeUrl } from "@/lib/youtube";
+import { getYouTubeVideoId, isValidYouTubeUrl } from "@/lib/youtube";
 
 type LessonType = "VIDEO" | "TEXT" | "PDF" | "ASSIGNMENT" | "QUIZ" | "LIVE_SESSION";
 type LessonVideoType = "NONE" | "YOUTUBE" | "UPLOAD";
@@ -38,6 +38,14 @@ interface Lesson {
   sourceCreditUrl?: string | null;
   isFree: boolean;
   orderIndex: number;
+  sections?: Array<{
+    id: string;
+    title: string;
+    order: number;
+    youtubeId: string;
+    startSeconds: number;
+    endSeconds: number;
+  }>;
 }
 
 interface Module {
@@ -741,6 +749,102 @@ function NewLessonForm({ moduleId, onClose, onCreated }: { moduleId: string; onC
         </Button>
         <Button size="sm" variant="outline" onClick={onClose}>Болих</Button>
       </div>
+    </div>
+  );
+}
+
+function LessonSectionCreateForm({
+  lessonId,
+  existingCount,
+  onCreated,
+}: {
+  lessonId: string;
+  existingCount: number;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    youtubeUrl: "",
+    startSeconds: 0,
+    endSeconds: 120,
+    taskTitle: "",
+    taskDescription: "",
+    pdfUrl: "/resources/youtube-section-workbook.pdf",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const submit = () => {
+    const youtubeId = getYouTubeVideoId(form.youtubeUrl) ?? form.youtubeUrl.trim();
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(youtubeId)) {
+      setError("YouTube URL эсвэл video ID буруу байна.");
+      return;
+    }
+    if (form.startSeconds < 0 || form.endSeconds <= form.startSeconds) {
+      setError("Эхлэх секунд 0-с их/тэнцүү, дуусах секунд эхлэхээс их байх ёстой.");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await createLessonSection({
+        lessonId,
+        title: form.title,
+        description: form.description,
+        youtubeId,
+        startSeconds: form.startSeconds,
+        endSeconds: form.endSeconds,
+        order: existingCount,
+        taskTitle: form.taskTitle,
+        taskDescription: form.taskDescription,
+        pdfUrl: form.pdfUrl,
+        resourceUrl: form.pdfUrl,
+      });
+      if ("error" in result) {
+        toast({ type: "error", title: "Section хадгалж чадсангүй" });
+        return;
+      }
+      toast({ type: "success", title: "Section нэмэгдлээ" });
+      setForm({
+        title: "",
+        description: "",
+        youtubeUrl: form.youtubeUrl,
+        startSeconds: form.endSeconds,
+        endSeconds: form.endSeconds + 120,
+        taskTitle: "",
+        taskDescription: "",
+        pdfUrl: "/resources/youtube-section-workbook.pdf",
+      });
+      onCreated();
+    });
+  };
+
+  return (
+    <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+      <div>
+        <p className="text-sm font-semibold text-emerald-900">YouTube section нэмэх</p>
+        <p className="text-xs text-emerald-700">
+          Нэг YouTube video ID-г timestamp range-ээр олон section болгон хадгална.
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Section title" />
+        <Input value={form.youtubeUrl} onChange={(e) => setForm({ ...form, youtubeUrl: e.target.value })} placeholder="YouTube URL or video ID" />
+      </div>
+      <Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Section description" />
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Input type="number" min={0} value={form.startSeconds} onChange={(e) => setForm({ ...form, startSeconds: Number(e.target.value) })} placeholder="Start seconds" />
+        <Input type="number" min={1} value={form.endSeconds} onChange={(e) => setForm({ ...form, endSeconds: Number(e.target.value) })} placeholder="End seconds" />
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Input value={form.taskTitle} onChange={(e) => setForm({ ...form, taskTitle: e.target.value })} placeholder="Task title" />
+        <Input value={form.pdfUrl} onChange={(e) => setForm({ ...form, pdfUrl: e.target.value })} placeholder="/resources/..." />
+      </div>
+      <Textarea rows={2} value={form.taskDescription} onChange={(e) => setForm({ ...form, taskDescription: e.target.value })} placeholder="Task description" />
+      {error ? <p className="text-xs font-medium text-red-500">{error}</p> : null}
+      <Button size="sm" onClick={submit} disabled={isPending || !form.title.trim()}>
+        {isPending ? <><Loader2 size={13} className="animate-spin mr-1" /> Хадгалж байна...</> : "Section хадгалах"}
+      </Button>
     </div>
   );
 }

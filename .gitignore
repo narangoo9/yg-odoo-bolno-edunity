@@ -50,3 +50,9 @@ next-env.d.ts
 
 # Docker
 docker-compose.override.yml
+
+# local database backups
+/backups/
+
+# user-uploaded files (production-д object storage ашиглана)
+/public/uploads/

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -21,9 +21,10 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Plus, Trash2, CheckCircle2, Circle, Clock } from "lucide-react";
+import { GripVertical, Plus, Trash2, CheckCircle2, Circle, Clock, Loader2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { cn } from "@/lib/utils";
+import { toast } from "@/components/ui/toaster";
 
 type TodoStatus = "pending" | "inProgress" | "completed";
 
@@ -33,6 +34,7 @@ interface Todo {
   status: TodoStatus;
   priority: "low" | "medium" | "high";
   createdAt: Date;
+  orderIndex: number;
 }
 
 interface Column {
@@ -58,6 +60,47 @@ const PRIORITY_LABELS: Record<string, string> = {
   low: "Бага", medium: "Дунд", high: "Өндөр",
 };
 
+// ── API helpers ────────────────────────────────────────────────────────────────
+async function apiCreateTodo(data: { text: string; priority: string; status: TodoStatus; orderIndex: number }): Promise<Todo | null> {
+  try {
+    const res = await fetch("/api/v1/todos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!json.success) return null;
+    return { ...json.data, createdAt: new Date(json.data.createdAt) };
+  } catch {
+    return null;
+  }
+}
+
+async function apiUpdateTodo(id: string, patch: { status?: TodoStatus; priority?: string; text?: string; orderIndex?: number }): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/v1/todos/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const json = await res.json();
+    return json.success === true;
+  } catch {
+    return false;
+  }
+}
+
+async function apiDeleteTodo(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/v1/todos/${id}`, { method: "DELETE" });
+    const json = await res.json();
+    return json.success === true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Sortable card ──────────────────────────────────────────────────────────────
 function SortableTodoCard({ todo, onDelete }: { todo: Todo; onDelete: (id: string) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id });
 
@@ -114,20 +157,30 @@ function TodoCard({ todo }: { todo: Todo }) {
   );
 }
 
-const SAMPLE_TODOS: Todo[] = [
-  { id: "1", text: "Шинэ сургалтын материал нэмэх", status: "pending",    priority: "high",   createdAt: new Date() },
-  { id: "2", text: "Хэрэглэгчийн гомдлыг шийдвэрлэх", status: "pending",    priority: "high",   createdAt: new Date() },
-  { id: "3", text: "Сарын тайлан гаргах",             status: "inProgress", priority: "medium", createdAt: new Date() },
-  { id: "4", text: "Stripe API шалгах",               status: "inProgress", priority: "low",    createdAt: new Date() },
-  { id: "5", text: "Ерөнхий тохиргоо шинэчлэх",      status: "completed",  priority: "low",    createdAt: new Date() },
-];
-
+// ── Main component ─────────────────────────────────────────────────────────────
 export function TodoBoard() {
   const { t } = useLanguage();
-  const [todos, setTodos] = useState<Todo[]>(SAMPLE_TODOS);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [newText, setNewText] = useState("");
+  const [todos,       setTodos]       = useState<Todo[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [activeId,    setActiveId]    = useState<string | null>(null);
+  const [newText,     setNewText]     = useState("");
   const [newPriority, setNewPriority] = useState<"low" | "medium" | "high">("medium");
+
+  // Load todos from API on mount
+  useEffect(() => {
+    fetch("/api/v1/todos")
+      .then(r => r.json())
+      .then(json => {
+        if (json.success) {
+          setTodos((json.data as Todo[]).map((t: Todo) => ({
+            ...t,
+            createdAt: new Date(t.createdAt),
+          })));
+        }
+      })
+      .catch(() => toast({ type: "error", title: "Даалгавар ачааллахад алдаа гарлаа" }))
+      .finally(() => setLoading(false));
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -145,19 +198,17 @@ export function TodoBoard() {
     if (!over) return;
 
     const activeId = String(active.id);
-    const overId = String(over.id);
+    const overId   = String(over.id);
 
     const activeTodo = todos.find((t) => t.id === activeId);
     if (!activeTodo) return;
 
-    // Check if dropped over a column
     const overColumn = COLUMNS.find((c) => c.id === overId);
     if (overColumn && activeTodo.status !== overColumn.id) {
       setTodos((prev) => prev.map((t) => t.id === activeId ? { ...t, status: overColumn.id } : t));
       return;
     }
 
-    // Check if dropped over another card
     const overTodo = todos.find((t) => t.id === overId);
     if (overTodo && overTodo.status !== activeTodo.status) {
       setTodos((prev) => prev.map((t) => t.id === activeId ? { ...t, status: overTodo.status } : t));
@@ -166,39 +217,70 @@ export function TodoBoard() {
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    const draggedId = String(active.id);
     setActiveId(null);
     if (!over) return;
 
-    const activeId = String(active.id);
     const overId = String(over.id);
-    if (activeId === overId) return;
+    if (draggedId === overId) return;
 
     setTodos((prev) => {
-      const oldIdx = prev.findIndex((t) => t.id === activeId);
+      const oldIdx = prev.findIndex((t) => t.id === draggedId);
       const newIdx = prev.findIndex((t) => t.id === overId);
       if (oldIdx === -1 || newIdx === -1) return prev;
       return arrayMove(prev, oldIdx, newIdx);
     });
+
+    // Persist status change and new order
+    const movedTodo = todos.find(t => t.id === draggedId);
+    if (movedTodo) {
+      apiUpdateTodo(draggedId, { status: movedTodo.status, orderIndex: todos.findIndex(t => t.id === draggedId) })
+        .catch(() => toast({ type: "error", title: "Байршил хадгалахад алдаа гарлаа" }));
+    }
   }
 
-  const addTodo = useCallback(() => {
+  const addTodo = useCallback(async () => {
     if (!newText.trim()) return;
-    setTodos((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        text: newText.trim(),
-        status: "pending",
-        priority: newPriority,
-        createdAt: new Date(),
-      },
-    ]);
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: Todo = {
+      id:         tempId,
+      text:       newText.trim(),
+      status:     "pending",
+      priority:   newPriority,
+      createdAt:  new Date(),
+      orderIndex: todos.length,
+    };
+    setTodos(prev => [...prev, optimistic]);
     setNewText("");
-  }, [newText, newPriority]);
 
-  const deleteTodo = useCallback((id: string) => {
+    const created = await apiCreateTodo({
+      text:       optimistic.text,
+      priority:   newPriority,
+      status:     "pending",
+      orderIndex: todos.length,
+    });
+
+    if (created) {
+      setTodos(prev => prev.map(t => t.id === tempId ? { ...created, createdAt: new Date(created.createdAt) } : t));
+    } else {
+      setTodos(prev => prev.filter(t => t.id !== tempId));
+      toast({ type: "error", title: "Даалгавар үүсгэхэд алдаа гарлаа" });
+    }
+  }, [newText, newPriority, todos.length]);
+
+  const deleteTodo = useCallback(async (id: string) => {
     setTodos((prev) => prev.filter((t) => t.id !== id));
+    const ok = await apiDeleteTodo(id);
+    if (!ok) toast({ type: "error", title: "Устгахад алдаа гарлаа" });
   }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <Loader2 size={24} className="animate-spin text-primary/60" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

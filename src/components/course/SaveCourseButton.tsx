@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Bookmark } from "lucide-react";
 import { toggleSavedCourse } from "@/modules/courses/application/actions";
 import { toast } from "@/components/ui/toaster";
@@ -18,6 +19,7 @@ export function SaveCourseButton({
   size = 14,
   className = "",
 }: SaveCourseButtonProps) {
+  const router = useRouter();
   const [saved, setSaved] = useState(initialSaved);
   const [isPending, startTransition] = useTransition();
 
@@ -33,6 +35,8 @@ export function SaveCourseButton({
           type: "success",
           title: result.saved ? "Хадгаллаа" : "Хадгалсанаас хасав",
         });
+        // Refresh so server components (saved page, catalog) reflect the new state
+        router.refresh();
       } catch {
         toast({ type: "error", title: "Алдаа гарлаа" });
       }
