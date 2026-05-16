@@ -402,6 +402,7 @@ export function DashboardSidebar({
             >
               {userAvatar ? (
                 <Image
+                  key={userAvatar}
                   src={userAvatar}
                   alt={userName || "Profile"}
                   width={36}
@@ -427,6 +428,7 @@ export function DashboardSidebar({
             >
               {userAvatar ? (
                 <Image
+                  key={userAvatar}
                   src={userAvatar}
                   alt={userName || "Profile"}
                   width={32}

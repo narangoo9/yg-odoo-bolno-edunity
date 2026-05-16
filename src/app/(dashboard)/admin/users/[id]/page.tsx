@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/index";
 import { ChevronLeft, Mail, Calendar, Shield, BookOpen, Award, Clock } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { DeleteUserButton } from "@/components/admin/DeleteUserButton";
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -90,6 +91,18 @@ export default async function AdminUserDetailPage({ params }: Props) {
             </div>
             {user.bio && <p className="text-sm text-muted-foreground mt-3 leading-relaxed">{user.bio}</p>}
           </div>
+        </div>
+      </div>
+
+      <div className="bg-card rounded-2xl border border-red-200 p-5 dark:border-red-900/50">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-foreground">Account устгах</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Энэ хэрэглэгчийн login session болон хувийн learning data-г устгана.
+            </p>
+          </div>
+          <DeleteUserButton userId={user.id} userName={user.name} redirectTo="/admin/users" />
         </div>
       </div>
 

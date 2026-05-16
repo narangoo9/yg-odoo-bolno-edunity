@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { ShieldCheck } from "lucide-react";
@@ -39,21 +40,39 @@ export default async function AdminLogsPage({ searchParams }: PageProps) {
     }),
   };
 
+  const getCachedLogEntities = unstable_cache(
+    () => db.auditLog.groupBy({ by: ["entity"], _count: { _all: true } }),
+    ["admin-log-entities"],
+    { revalidate: 120 },
+  );
+
   const [logs, total, entities] = await Promise.all([
     db.auditLog.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
-      include: {
+      select: {
+        id: true,
+        action: true,
+        entity: true,
+        entityId: true,
+        ipAddress: true,
+        createdAt: true,
         user: { select: { name: true, email: true } },
       },
     }),
     db.auditLog.count({ where }),
-    db.auditLog.groupBy({ by: ["entity"], _count: { _all: true } }).catch(() => []),
+    getCachedLogEntities().catch(() => []),
   ]);
 
-  const topEntities = entities.sort((a, b) => b._count._all - a._count._all).slice(0, 6);
+  const topEntities = entities
+    .map((e) => ({
+      entity: e.entity,
+      count: typeof e._count === "object" && e._count && "_all" in e._count ? e._count._all ?? 0 : 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -73,7 +92,7 @@ export default async function AdminLogsPage({ searchParams }: PageProps) {
                 sp.entity === e.entity ? "border-border dark:border-border" : "border-border dark:border-border"
               }`}
             >
-              <p className="text-lg font-bold text-foreground dark:text-white">{e._count._all}</p>
+              <p className="text-lg font-bold text-foreground dark:text-white">{e.count}</p>
               <p className="text-xs text-muted-foreground dark:text-muted-foreground truncate">{e.entity}</p>
             </a>
           ))}

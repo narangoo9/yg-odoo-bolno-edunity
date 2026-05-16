@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { getDashboardHomeByRole } from "@/lib/dashboard-routes";
 import { verifyEmail } from "@/modules/auth/application/actions";
+import { VerifyEmailPending } from "./VerifyEmailPending";
 
 export const metadata: Metadata = { title: "Имэйл баталгаажуулалт" };
 
@@ -11,6 +15,22 @@ interface Props {
 
 export default async function VerifyEmailPage({ searchParams }: Props) {
   const { token, sent, email } = await searchParams;
+  const session = await auth();
+
+  // Fully verified user has no reason to be here
+  if (session?.user?.status === "ACTIVE") {
+    redirect(getDashboardHomeByRole(session.user.role));
+  }
+
+  // Authenticated but unverified — show the pending UI (no token needed)
+  if (!token && session?.user?.status === "PENDING_VERIFICATION") {
+    return (
+      <VerifyEmailPending
+        userId={session.user.id}
+        email={session.user.email ?? ""}
+      />
+    );
+  }
 
   if (!token) {
     if (sent === "1") {

@@ -14,12 +14,19 @@ const createNextConfig = (phase: string): NextConfig => {
       : undefined,
   ].filter((origin): origin is string => Boolean(origin));
   const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const socketConnectSrc = socketUrl
     ? [
         socketUrl,
         socketUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:"),
       ].join(" ")
     : "http://localhost:4000 ws://localhost:4000";
+  const supabaseConnectSrc = supabaseUrl
+    ? [
+        supabaseUrl,
+        supabaseUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:"),
+      ].join(" ")
+    : "";
 
   return {
     output: "standalone",
@@ -75,7 +82,7 @@ const createNextConfig = (phase: string): NextConfig => {
                 "img-src 'self' blob: data: https:",
                 "font-src 'self'",
                 "frame-src https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com",
-                `connect-src 'self' https: ${socketConnectSrc}`,
+                `connect-src 'self' https: ${socketConnectSrc} ${supabaseConnectSrc}`,
               ].join("; "),
             },
           ],
@@ -98,8 +105,19 @@ const createNextConfig = (phase: string): NextConfig => {
   };
 };
 
-export default (phase: string) =>
-  withSentryConfig(createNextConfig(phase), {
+const nextConfig = (phase: string) => createNextConfig(phase);
+
+export default (phase: string) => {
+  const config = nextConfig(phase);
+  const sentryEnabled =
+    process.env.NODE_ENV === "production" &&
+    Boolean(process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN);
+
+  if (!sentryEnabled) {
+    return config;
+  }
+
+  return withSentryConfig(config, {
     org: process.env.SENTRY_ORG,
     project: process.env.SENTRY_PROJECT,
     silent: true,
@@ -111,3 +129,4 @@ export default (phase: string) =>
       automaticVercelMonitors: false,
     },
   });
+};

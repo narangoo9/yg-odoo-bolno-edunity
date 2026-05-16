@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -11,16 +11,20 @@ import {
   CalendarDays,
   CheckSquare,
   Flame,
+  RotateCcw,
   Send,
   Sparkles,
   Target,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import type { AgentAction } from "@/lib/agent/agent-types";
 import { AiAgentMessage, type ChatMessage } from "./AiAgentMessage";
 import { AiAgentSuggestions } from "./AiAgentSuggestions";
+import { AiAgentActionButton } from "./AiAgentActionButton";
 
 // ── Quick actions ─────────────────────────────────────────────────────────────
 
@@ -98,7 +102,13 @@ interface Props {
   onQuickAction: (prompt: string) => void;
   onMessage: (prompt: string) => void;
   onClearChat: () => void;
+  onRestoreChat: () => void;
   onToggleQuickActions: () => void;
+  streamingText?: string;
+  liveToolChips?: Array<{ id: string; title: string; detail?: string }>;
+  liveActions?: AgentAction[];
+  liveSuggestions?: string[];
+  scrollNonce?: number;
 }
 
 export function AiAgentPanel({
@@ -118,22 +128,46 @@ export function AiAgentPanel({
   onQuickAction,
   onMessage,
   onClearChat,
+  onRestoreChat,
   onToggleQuickActions,
+  streamingText = "",
+  liveToolChips = [],
+  liveActions = [],
+  liveSuggestions = [],
+  scrollNonce = 0,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const hasMessages = messages.length > 0;
+  const hasMessages = messages.length > 0 || !!streamingText;
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const run = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    run();
+    requestAnimationFrame(run);
+  }, [scrollNonce, messages.length, loading, streamingText, liveToolChips.length, liveActions.length, liveSuggestions.length]);
 
   // Suggestions from the last assistant message
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
   const suggestions =
-    !loading && lastAssistant?.suggestions?.length ? lastAssistant.suggestions : [];
+    !loading && lastAssistant?.suggestions?.length
+      ? lastAssistant.suggestions
+      : !loading && liveSuggestions.length > 0
+        ? liveSuggestions
+        : [];
+
+  const chipSuggestions =
+    loading && liveSuggestions.length > 0 ? liveSuggestions : suggestions;
 
   function greetingSuggestion() {
-    if (pageContext === "catalog") return "Catalog дээрх хичээлүүдийг шүүж хамгийн тохирсонг нь эхлүүл!";
-    if (pageContext === "lessons") return "Хичээлийг үргэлжлүүлэн streak-ээ хадгалаарай!";
-    if (pageContext === "leaderboard") return "XP нэмэгдүүлж leaderboard дээр дээшил!";
+    if (pageContext.includes("catalog")) return "Catalog дээрх хичээлүүдийг шүүж хамгийн тохирсонг нь эхлүүл!";
+    if (pageContext.includes("courses")) return "Хичээлийг үргэлжлүүлэн streak-ээ хадгалаарай!";
+    if (pageContext.includes("leaderboard")) return "XP нэмэгдүүлж leaderboard дээр дээшил!";
     return "Өнөөдөр нэг хичээл дуусгаад streak-ээ хадгалаарай!";
   }
 
@@ -153,20 +187,45 @@ export function AiAgentPanel({
           <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-green-400 dark:border-[#0f0c1f]" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-black leading-tight text-foreground">AI Mentor</p>
-          <p className="text-[11px] text-muted-foreground">Сурах аялалд чинь тусална ✨</p>
+          <p className="text-[14px] font-black leading-tight text-foreground">AI Agent</p>
+          <p className="text-[11px] text-muted-foreground">Groq · төлөвлөгөө, todo, санал ✨</p>
         </div>
-        <button
-          onClick={onClose}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-          aria-label="Хаах"
-        >
-          <X size={15} />
-        </button>
+        <motion.div className="flex shrink-0 items-center gap-0.5">
+          {messages.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={onRestoreChat}
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                title="Сүүлийн чатыг сэргээх"
+                aria-label="Сүүлийн чатыг сэргээх"
+              >
+                <RotateCcw size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={onClearChat}
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                title="Чат цэвэрлэх"
+                aria-label="Чат цэвэрлэх"
+              >
+                <Trash2 size={14} />
+              </button>
+            </>
+          )}
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            aria-label="Хаах"
+          >
+            <X size={15} />
+          </button>
+        </motion.div>
       </div>
 
       {/* Scrollable content */}
       <div
+        ref={scrollContainerRef}
         className="flex-1 overflow-y-auto p-4 space-y-3"
         aria-live="polite"
         aria-atomic="false"
@@ -257,22 +316,59 @@ export function AiAgentPanel({
           />
         ))}
 
-        {/* Inline suggestions below last assistant message */}
-        {suggestions.length > 0 && (
-          <div className="pl-9">
-            <AiAgentSuggestions chips={suggestions} onSelect={onMessage} disabled={loading} />
-          </div>
+        {loading && streamingText && (
+          <motion.div className="flex gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500">
+              <Image src="/brand/ai_agent_icon.png" alt="" width={34} height={34} className="scale-125 object-contain" />
+            </div>
+            <div className="max-w-[84%] rounded-2xl rounded-tl-sm bg-muted/60 px-3 py-2 text-[12px] leading-relaxed text-foreground dark:bg-white/5">
+              <span className="whitespace-pre-wrap">{streamingText}</span>
+              {liveToolChips.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {liveToolChips.map((chip) => (
+                    <span
+                      key={chip.id}
+                      className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-200"
+                    >
+                      {chip.title}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
         )}
 
-        {/* Typing indicator */}
-        {loading && (
+        {loading && !streamingText && (
           <div className="flex gap-2">
-            <div className="shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center w-7 h-7">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500">
               <Image src="/brand/ai_agent_icon.png" alt="" width={34} height={34} className="scale-125 object-contain" />
             </div>
             <div className="rounded-2xl rounded-tl-sm bg-muted/60 px-3 py-2.5 dark:bg-white/5">
               <TypingDots />
             </div>
+          </div>
+        )}
+
+        {loading && liveActions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pl-0 sm:pl-9">
+            {liveActions.map((action, i) => (
+              <AiAgentActionButton
+                key={`act-${action.label}-${i}`}
+                action={action}
+                onNavigate={onClose}
+                onMessage={onMessage}
+              />
+            ))}
+          </div>
+        )}
+
+        {chipSuggestions.length > 0 && (
+          <div className="pl-0 sm:pl-9">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Дараагийн асуулт
+            </p>
+            <AiAgentSuggestions chips={chipSuggestions} onSelect={onMessage} disabled={loading} />
           </div>
         )}
 
@@ -332,7 +428,7 @@ export function AiAgentPanel({
             }}
             placeholder="Асуултаа бичнэ үү…"
             disabled={loading}
-            aria-label="AI Mentor-т мессеж илгээх"
+            aria-label="AI Agent-т мессеж илгээх"
             className="min-w-0 flex-1 bg-transparent text-[12px] text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <button
@@ -344,13 +440,23 @@ export function AiAgentPanel({
             <Send size={13} />
           </button>
         </div>
-        {hasMessages && (
-          <button
-            onClick={onClearChat}
-            className="mt-1.5 w-full cursor-pointer text-center text-[10px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:underline"
-          >
-            Чат цэвэрлэх
-          </button>
+        {messages.length > 0 && (
+          <div className="mt-1.5 flex justify-center gap-4">
+            <button
+              type="button"
+              onClick={onRestoreChat}
+              className="cursor-pointer text-[10px] text-muted-foreground transition-colors hover:text-violet-600 focus-visible:outline-none focus-visible:underline"
+            >
+              Сэргээх
+            </button>
+            <button
+              type="button"
+              onClick={onClearChat}
+              className="cursor-pointer text-[10px] text-muted-foreground transition-colors hover:text-red-500 focus-visible:outline-none focus-visible:underline"
+            >
+              Цэвэрлэх
+            </button>
+          </div>
         )}
       </div>
     </>

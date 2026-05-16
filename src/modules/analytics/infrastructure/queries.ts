@@ -48,57 +48,53 @@ export async function getAdminOverview() {
 
 export async function getRevenueByMonth(months = 6) {
   const now = new Date();
-  const start = subMonths(startOfMonth(now), months - 1);
-  const end = endOfMonth(now);
-
-  const monthRange = eachMonthOfInterval({ start, end });
-
-  const payments = await db.payment.findMany({
-    where: {
-      status: "COMPLETED",
-      createdAt: { gte: start, lte: end },
-    },
-    select: { amount: true, createdAt: true },
+  const monthRange = eachMonthOfInterval({
+    start: subMonths(startOfMonth(now), months - 1),
+    end: endOfMonth(now),
   });
 
-  return monthRange.map((month) => {
-    const monthPayments = payments.filter((p) => {
-      const d = new Date(p.createdAt);
-      return d.getFullYear() === month.getFullYear() && d.getMonth() === month.getMonth();
-    });
+  const rows = await Promise.all(
+    monthRange.map(async (month) => {
+      const agg = await db.payment.aggregate({
+        _sum: { amount: true },
+        _count: true,
+        where: {
+          status: "COMPLETED",
+          createdAt: { gte: startOfMonth(month), lte: endOfMonth(month) },
+        },
+      });
+      return {
+        month: month.toLocaleDateString("mn-MN", { month: "short", year: "numeric" }),
+        revenue: Number(agg._sum.amount ?? 0),
+        count: agg._count,
+      };
+    }),
+  );
 
-    return {
-      month: month.toLocaleDateString("mn-MN", { month: "short", year: "numeric" }),
-      revenue: monthPayments.reduce((sum, p) => sum + Number(p.amount), 0),
-      count: monthPayments.length,
-    };
-  });
+  return rows;
 }
 
 export async function getEnrollmentsByMonth(months = 6) {
   const now = new Date();
-  const start = subMonths(startOfMonth(now), months - 1);
-  const end = endOfMonth(now);
-
-  const monthRange = eachMonthOfInterval({ start, end });
-
-  const enrollments = await db.enrollment.findMany({
-    where: { enrolledAt: { gte: start, lte: end } },
-    select: { enrolledAt: true, status: true },
+  const monthRange = eachMonthOfInterval({
+    start: subMonths(startOfMonth(now), months - 1),
+    end: endOfMonth(now),
   });
 
-  return monthRange.map((month) => {
-    const monthEnrollments = enrollments.filter((e) => {
-      const d = new Date(e.enrolledAt);
-      return d.getFullYear() === month.getFullYear() && d.getMonth() === month.getMonth();
-    });
-
-    return {
-      month: month.toLocaleDateString("mn-MN", { month: "short", year: "numeric" }),
-      enrollments: monthEnrollments.length,
-      completed: monthEnrollments.filter((e) => e.status === "COMPLETED").length,
-    };
-  });
+  return Promise.all(
+    monthRange.map(async (month) => {
+      const range = { gte: startOfMonth(month), lte: endOfMonth(month) };
+      const [enrollments, completed] = await Promise.all([
+        db.enrollment.count({ where: { enrolledAt: range } }),
+        db.enrollment.count({ where: { enrolledAt: range, status: "COMPLETED" } }),
+      ]);
+      return {
+        month: month.toLocaleDateString("mn-MN", { month: "short", year: "numeric" }),
+        enrollments,
+        completed,
+      };
+    }),
+  );
 }
 
 export async function getTopCourses(limit = 10) {
@@ -106,12 +102,26 @@ export async function getTopCourses(limit = 10) {
     where: { status: "PUBLISHED" },
     orderBy: { enrollments: { _count: "desc" } },
     take: limit,
-    include: {
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      price: true,
       instructor: { select: { name: true } },
       _count: { select: { enrollments: true, reviews: true } },
-      reviews: { select: { rating: true } },
     },
   });
+
+  const courseIds = courses.map((c) => c.id);
+  const ratingByCourse =
+    courseIds.length > 0
+      ? await db.review.groupBy({
+          by: ["courseId"],
+          _avg: { rating: true },
+          where: { courseId: { in: courseIds }, isApproved: true },
+        })
+      : [];
+  const avgMap = new Map(ratingByCourse.map((r) => [r.courseId, Number(r._avg.rating ?? 0)]));
 
   return courses.map((c) => ({
     id: c.id,
@@ -120,67 +130,68 @@ export async function getTopCourses(limit = 10) {
     instructorName: c.instructor.name,
     enrollmentCount: c._count.enrollments,
     reviewCount: c._count.reviews,
-    averageRating:
-      c.reviews.length > 0 ? c.reviews.reduce((s, r) => s + r.rating, 0) / c.reviews.length : 0,
+    averageRating: avgMap.get(c.id) ?? 0,
     price: Number(c.price),
   }));
 }
 
 export async function getUserGrowthByMonth(months = 6) {
   const now = new Date();
-  const start = subMonths(startOfMonth(now), months - 1);
-  const end = endOfMonth(now);
-  const monthRange = eachMonthOfInterval({ start, end });
-
-  const users = await db.user.findMany({
-    where: { createdAt: { gte: start, lte: end } },
-    select: { createdAt: true, role: true },
+  const monthRange = eachMonthOfInterval({
+    start: subMonths(startOfMonth(now), months - 1),
+    end: endOfMonth(now),
   });
 
-  return monthRange.map((month) => {
-    const monthUsers = users.filter((u) => {
-      const d = new Date(u.createdAt);
-      return d.getFullYear() === month.getFullYear() && d.getMonth() === month.getMonth();
-    });
-
-    return {
-      month: month.toLocaleDateString("mn-MN", { month: "short", year: "numeric" }),
-      total: monthUsers.length,
-      students: monthUsers.filter((u) => u.role === "STUDENT").length,
-      instructors: monthUsers.filter((u) => u.role === "INSTRUCTOR").length,
-    };
-  });
+  return Promise.all(
+    monthRange.map(async (month) => {
+      const range = { gte: startOfMonth(month), lte: endOfMonth(month) };
+      const [total, students, instructors] = await Promise.all([
+        db.user.count({ where: { createdAt: range } }),
+        db.user.count({ where: { createdAt: range, role: "STUDENT" } }),
+        db.user.count({ where: { createdAt: range, role: "INSTRUCTOR" } }),
+      ]);
+      return {
+        month: month.toLocaleDateString("mn-MN", { month: "short", year: "numeric" }),
+        total,
+        students,
+        instructors,
+      };
+    }),
+  );
 }
 
 // â”€â”€â”€ INSTRUCTOR ANALYTICS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-async function getInstructorCourseIds(instructorId: string) {
+export async function getInstructorAnalytics(instructorId: string) {
+  // Fetch instructor's course ids once, then run all aggregates in parallel.
   const courses = await db.course.findMany({
     where: { instructorId },
     select: { id: true },
   });
+  const courseIds = courses.map((c) => c.id);
 
-  return courses.map((course) => course.id);
-}
+  if (courseIds.length === 0) {
+    return {
+      totalCourses: 0,
+      totalStudents: 0,
+      totalRevenue: 0,
+      totalCertificates: 0,
+      averageRating: 0,
+    };
+  }
 
-export async function getInstructorAnalytics(instructorId: string) {
-  const [courseIds, totalEnrollments, totalCertificates, avgRating] = await Promise.all([
-    getInstructorCourseIds(instructorId),
-    db.enrollment.count({ where: { course: { instructorId } } }),
-    db.certificate.count({ where: { course: { instructorId } } }),
+  const [totalEnrollments, totalCertificates, avgRating, totalRevenue] = await Promise.all([
+    db.enrollment.count({ where: { courseId: { in: courseIds } } }),
+    db.certificate.count({ where: { courseId: { in: courseIds } } }),
     db.review.aggregate({
       _avg: { rating: true },
-      where: { course: { instructorId }, isApproved: true },
+      where: { courseId: { in: courseIds }, isApproved: true },
+    }),
+    db.payment.aggregate({
+      _sum: { amount: true },
+      where: { status: "COMPLETED", courseId: { in: courseIds } },
     }),
   ]);
-
-  const totalRevenue =
-    courseIds.length === 0
-      ? { _sum: { amount: null } }
-      : await db.payment.aggregate({
-          _sum: { amount: true },
-          where: { status: "COMPLETED", courseId: { in: courseIds } },
-        });
 
   return {
     totalCourses: courseIds.length,
@@ -232,21 +243,18 @@ export async function getInstructorCourseStats(instructorId: string) {
 // â”€â”€â”€ STUDENT ANALYTICS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getStudentStats(studentId: string) {
-  const [enrollments, certificates, completedLessons, quizAttempts] = await Promise.all([
-    db.enrollment.count({ where: { studentId } }),
-    db.certificate.count({ where: { studentId } }),
-    db.progress.count({ where: { studentId, isCompleted: true } }),
-    db.quizAttempt.count({ where: { studentId, status: "GRADED" } }),
-  ]);
-
-  const completedCourses = await db.enrollment.count({
-    where: { studentId, status: "COMPLETED" },
-  });
-
-  const avgQuizScore = await db.quizAttempt.aggregate({
-    _avg: { score: true },
-    where: { studentId, status: "GRADED" },
-  });
+  const [enrollments, completedCourses, certificates, completedLessons, quizAttempts, avgQuizScore] =
+    await Promise.all([
+      db.enrollment.count({ where: { studentId } }),
+      db.enrollment.count({ where: { studentId, status: "COMPLETED" } }),
+      db.certificate.count({ where: { studentId } }),
+      db.progress.count({ where: { studentId, isCompleted: true } }),
+      db.quizAttempt.count({ where: { studentId, status: "GRADED" } }),
+      db.quizAttempt.aggregate({
+        _avg: { score: true },
+        where: { studentId, status: "GRADED" },
+      }),
+    ]);
 
   return {
     enrolledCourses: enrollments,

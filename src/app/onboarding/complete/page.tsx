@@ -106,10 +106,20 @@ export default function CompletePage() {
     if (!hasCompleted.current) {
       hasCompleted.current = true;
       completeOnboarding();
+      fetch("/api/v1/onboarding/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goal: goals[0],
+          level: level ?? undefined,
+        }),
+      }).catch(() => {
+        // Non-fatal — user can re-trigger by visiting again
+      });
     }
     const t = setTimeout(() => setShowConfetti(false), 4000);
     return () => clearTimeout(t);
-  }, [completeOnboarding]);
+  }, [completeOnboarding, goals, level]);
 
   return (
     <>

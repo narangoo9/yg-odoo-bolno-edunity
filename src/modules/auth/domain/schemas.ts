@@ -20,6 +20,7 @@ export const registerSchema = z
       .regex(/[A-Z]/, "Нууц үгт том үсэг агуулагдсан байх ёстой")
       .regex(/[0-9]/, "Нууц үгт тоо агуулагдсан байх ёстой"),
     confirmPassword: z.string(),
+    referralCode: z.string().trim().max(100).optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Нууц үг таарахгүй байна",

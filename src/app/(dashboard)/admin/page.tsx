@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Users, BookOpen, TrendingUp, Award, GraduationCap, Building2, Zap } from "lucide-react";
-import { AdminCharts } from "@/components/analytics/AdminCharts";
+import { AdminChartsLazy } from "@/components/analytics/AdminChartsLazy";
 import {
-  getAdminOverview,
-  getRevenueByMonth,
-  getEnrollmentsByMonth,
-  getTopCourses,
-  getUserGrowthByMonth,
-} from "@/modules/analytics/infrastructure/queries";
+  getCachedAdminOverview,
+  getCachedEnrollmentsByMonth,
+  getCachedRevenueByMonth,
+  getCachedTopCourses,
+  getCachedUserGrowthByMonth,
+} from "@/lib/admin/cached-analytics";
 import { formatCurrency } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Админ самбар" };
@@ -19,14 +19,14 @@ export default async function AdminDashboardPage() {
   if (!session?.user || session.user.role !== "SUPER_ADMIN") redirect("/login");
 
   const [overview, revenue, enrollments, topCourses, userGrowth] = await Promise.all([
-    getAdminOverview().catch(() => ({
+    getCachedAdminOverview().catch(() => ({
       totalUsers: 0, activeStudents: 0, totalCourses: 0, publishedCourses: 0,
       totalEnrollments: 0, totalCertificates: 0, totalRevenue: 0, newUsersThisMonth: 0,
     })),
-    getRevenueByMonth(6).catch(() => []),
-    getEnrollmentsByMonth(6).catch(() => []),
-    getTopCourses(5).catch(() => []),
-    getUserGrowthByMonth(6).catch(() => []),
+    getCachedRevenueByMonth(6).catch(() => []),
+    getCachedEnrollmentsByMonth(6).catch(() => []),
+    getCachedTopCourses(5).catch(() => []),
+    getCachedUserGrowthByMonth(6).catch(() => []),
   ]);
 
   return (
@@ -106,7 +106,7 @@ export default async function AdminDashboardPage() {
       </div>
 
       {/* ── CHARTS ── */}
-      <AdminCharts
+      <AdminChartsLazy
         revenueData={revenue}
         enrollmentData={enrollments}
         userGrowthData={userGrowth}

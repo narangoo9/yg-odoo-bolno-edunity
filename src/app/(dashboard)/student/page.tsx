@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import {
   ArrowRight,
   Award,
@@ -23,7 +24,60 @@ import { LearningArtwork } from "@/components/course/LearningArtwork";
 import { HeroBanner } from "@/components/dashboard/HeroBanner";
 import { getStripe } from "@/lib/stripe";
 import { syncLatestStripeSubscriptionForUser } from "@/lib/stripe/subscription-sync";
+import { dashboardCacheTags } from "@/lib/dashboard-cache";
 import type { ElementType } from "react";
+
+// Cached: popular recommended courses (shared across all students — no userId in key)
+const getCachedPopularCourses = unstable_cache(
+  () => getCourses({ status: "PUBLISHED", limit: 4, sortBy: "popular" }),
+  ["student-dashboard-recommended"],
+  { revalidate: 120, tags: ["courses:popular"] },
+);
+
+// Cached: per-student dashboard data bundle. Runs all queries in parallel.
+const getCachedStudentDashboardData = (studentId: string) =>
+  unstable_cache(
+    async () => {
+      // Phase 1: stats, enrollments, subscription — all parallel.
+      const [stats, enrollments, subscription] = await Promise.all([
+        getStudentStats(studentId),
+        getStudentEnrolledCourses(studentId),
+        db.subscription.findUnique({
+          where: { userId: studentId },
+          select: { plan: true, status: true },
+        }),
+      ]);
+
+      // Phase 2: derive in-progress course IDs then fetch their progress in parallel.
+      const inProgressIds = enrollments
+        .filter((e) => e.status !== "COMPLETED")
+        .slice(0, 2)
+        .map((e) => e.courseId);
+
+      const [progressData, moduleData] = await Promise.all([
+        inProgressIds.length > 0
+          ? db.progress.groupBy({
+              by: ["courseId"],
+              where: { studentId, isCompleted: true, courseId: { in: inProgressIds } },
+              _count: true,
+            })
+          : Promise.resolve([] as { courseId: string; _count: number }[]),
+        inProgressIds.length > 0
+          ? db.courseModule.findMany({
+              where: { courseId: { in: inProgressIds } },
+              select: { courseId: true, _count: { select: { lessons: true } } },
+            })
+          : Promise.resolve([] as { courseId: string; _count: { lessons: number } }[]),
+      ]);
+
+      return { stats, enrollments, subscription, progressData, moduleData };
+    },
+    [`student-dashboard-${studentId}`],
+    {
+      revalidate: 30,
+      tags: [dashboardCacheTags.user(studentId), dashboardCacheTags.sidebar(studentId)],
+    },
+  )();
 
 export const metadata: Metadata = { title: "Dashboard - EduNity" };
 
@@ -95,12 +149,27 @@ export default async function StudentDashboardPage({ searchParams }: PageProps) 
 
   const sp = await searchParams;
 
-  const existingSubscription = await db.subscription.findUnique({
-    where: { userId: session.user.id },
-    select: { plan: true, status: true },
-  }).catch(() => null);
+  // Run everything in parallel: cached bundle + cached popular courses.
+  const [dashboardData, recommendedResult] = await Promise.all([
+    getCachedStudentDashboardData(session.user.id).catch(() => null),
+    getCachedPopularCourses().catch(() => ({ courses: [], total: 0 })),
+  ]);
 
-  if (sp?.subscription === "success" && (!existingSubscription || existingSubscription.status !== "ACTIVE")) {
+  const stats = dashboardData?.stats ?? {
+    enrolledCourses: 0,
+    completedCourses: 0,
+    completedLessons: 0,
+    certificates: 0,
+    quizAttempts: 0,
+    averageQuizScore: 0,
+  };
+  const enrollments = dashboardData?.enrollments ?? [];
+  const subscription = dashboardData?.subscription ?? null;
+  const progressData = dashboardData?.progressData ?? [];
+  const moduleData = dashboardData?.moduleData ?? [];
+
+  // Off-path: only on Stripe return with success param do we touch Stripe.
+  if (sp?.subscription === "success" && (!subscription || subscription.status !== "ACTIVE")) {
     const user = await db.user.findUnique({
       where: { id: session.user.id },
       select: { email: true, stripeCustomerId: true },
@@ -117,47 +186,8 @@ export default async function StudentDashboardPage({ searchParams }: PageProps) 
     });
   }
 
-  const [stats, enrollments, recommendedResult, subscription] = await Promise.all([
-    getStudentStats(session.user.id).catch(() => ({
-      enrolledCourses: 0,
-      completedCourses: 0,
-      completedLessons: 0,
-      certificates: 0,
-      quizAttempts: 0,
-      averageQuizScore: 0,
-    })),
-    getStudentEnrolledCourses(session.user.id).catch(
-      () => [] as Awaited<ReturnType<typeof getStudentEnrolledCourses>>,
-    ),
-    getCourses({ status: "PUBLISHED", limit: 4, sortBy: "popular" }).catch(
-      () => ({ courses: [], total: 0 }),
-    ),
-    db.subscription.findUnique({
-      where: { userId: session.user.id },
-      select: { plan: true, status: true },
-    }).catch(() => null),
-  ]);
-
   const firstName = session.user.name?.split(" ")[0] ?? "Student";
   const inProgress = enrollments.filter((e) => e.status !== "COMPLETED").slice(0, 2);
-  const inProgressIds = inProgress.map((e) => e.courseId);
-
-  // Fetch real progress data for in-progress courses
-  const [progressData, moduleData] = await Promise.all([
-    inProgressIds.length > 0
-      ? db.progress.groupBy({
-          by: ["courseId"],
-          where: { studentId: session.user.id, isCompleted: true, courseId: { in: inProgressIds } },
-          _count: true,
-        })
-      : Promise.resolve([] as { courseId: string; _count: number }[]),
-    inProgressIds.length > 0
-      ? db.courseModule.findMany({
-          where: { courseId: { in: inProgressIds } },
-          select: { courseId: true, _count: { select: { lessons: true } } },
-        })
-      : Promise.resolve([] as { courseId: string; _count: { lessons: number } }[]),
-  ]);
 
   const progressLookup = new Map(progressData.map((p) => [p.courseId, p._count]));
   const totalLessonsMap = new Map<string, number>();

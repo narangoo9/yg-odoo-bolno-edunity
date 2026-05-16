@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import {
   BookOpen, Users, Award, BarChart3,
   ArrowRight, Star, Zap, Globe,
@@ -13,8 +14,26 @@ import { Navbar } from "@/components/layout/Navbar";
 import { ScrollReveal } from "@/components/ui/scroll-reveal";
 import { MascotImage, type MascotVariant } from "@/components/brand/MascotImage";
 import { auth } from "@/lib/auth";
+import { BILLING_TIERS, formatTierPrice } from "@/lib/pricing/billing-plans";
 
 export const revalidate = 60;
+
+const getCachedHomeCourses = unstable_cache(
+  () => getCourses({ limit: 6, sortBy: "popular" }).catch(() => null),
+  ["home-popular-courses"],
+  { revalidate: 120, tags: ["courses:popular"] },
+);
+
+const getCachedHomeStats = unstable_cache(
+  () =>
+    getAdminOverview().catch(() => ({
+      totalUsers: 0, activeStudents: 0, totalCourses: 0,
+      publishedCourses: 0, totalEnrollments: 0, totalCertificates: 0,
+      totalRevenue: 0, newUsersThisMonth: 0,
+    })),
+  ["home-admin-overview"],
+  { revalidate: 300, tags: ["admin:overview"] },
+);
 
 export const metadata: Metadata = {
   title: "EduNity — Онлайн Сургалтын Платформ",
@@ -29,12 +48,8 @@ export default async function HomePage() {
     redirect("/dashboard");
   }
   const [courseListing, stats] = await Promise.all([
-    getCourses({ limit: 6, sortBy: "popular" }).catch(() => null),
-    getAdminOverview().catch(() => ({
-      totalUsers: 0, activeStudents: 0, totalCourses: 0,
-      publishedCourses: 0, totalEnrollments: 0, totalCertificates: 0,
-      totalRevenue: 0, newUsersThisMonth: 0,
-    })),
+    getCachedHomeCourses(),
+    getCachedHomeStats(),
   ]);
   const courses = courseListing?.courses ?? [];
   const catalogUnavailable = courseListing === null;
@@ -597,81 +612,77 @@ export default async function HomePage() {
           </ScrollReveal>
 
           <div className="grid sm:grid-cols-3 gap-5 items-start">
-            {[
-              {
-                name: "Үнэгүй",
-                price: "0₮",
-                period: "/сар",
-                desc: "Суралцах анхны алхам",
-                borderClass: "border-[#E9DFFF] dark:border-[#2E2146]",
-                featured: false,
-                hasMascot: false,
-                btnClass: "bg-[#F7F4FF] dark:bg-[#1C142B] border border-[#E9DFFF] dark:border-[#2E2146] text-[#111827] dark:text-[#F8FAFC] hover:bg-violet-50 dark:hover:bg-violet-900/20",
-                features: ["3 курс үзэх", "Ахиц хяналт", "Хамтын нийгэмлэг", "Суурь сертификат"],
-              },
-              {
-                name: "Оюутан",
-                price: "29,900₮",
-                period: "/сар",
-                desc: "Хамгийн алдартай сонголт",
-                borderClass: "border-violet-400/50 dark:border-violet-500/40",
-                featured: true,
-                hasMascot: true,
-                btnClass: "btn-purple-glow bg-violet-600 hover:bg-violet-500 text-white shadow-[0_8px_24px_rgba(124,58,237,0.35)]",
-                features: ["Бүх курс", "Тэргүүлэх сертификат", "AI зөвлөгч", "Хямдрал & тусгай контент", "Дэмжлэгийн чат"],
-              },
-              {
-                name: "Байгууллага",
-                price: "199,900₮",
-                period: "/сар",
-                desc: "Байгууллага, team-д",
-                borderClass: "border-cyan-200/60 dark:border-cyan-500/20",
-                featured: false,
-                hasMascot: false,
-                btnClass: "bg-[#F7F4FF] dark:bg-[#1C142B] border border-[#E9DFFF] dark:border-[#2E2146] text-[#111827] dark:text-[#F8FAFC] hover:bg-violet-50 dark:hover:bg-violet-900/20",
-                features: ["Тусгай workspace", "Хязгааргүй гишүүн", "Нарийн тайлан", "API нэвтрэлт", "Зориулалтын дэмжлэг"],
-              },
-            ].map((plan, i) => (
-              <ScrollReveal key={plan.name} delay={i * 100}>
-                <div className={`relative bg-white dark:bg-[#1C142B] border ${plan.borderClass} rounded-2xl p-7 flex flex-col ${plan.featured ? "shadow-[0_0_48px_rgba(124,58,237,0.12)] dark:shadow-[0_0_48px_rgba(167,139,250,0.08)]" : ""}`}>
-                  {plan.featured && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                      <span className="px-3 py-1 bg-violet-600 text-white text-xs font-bold rounded-full shadow-[0_0_14px_rgba(139,92,246,0.4)]">
-                        Хамгийн алдартай
-                      </span>
-                    </div>
-                  )}
-                  {/* Mascot-celebrate near popular plan */}
-                  {plan.hasMascot && (
-                    <div className="absolute -top-12 right-3">
-                      <MascotImage variant="celebrate" size={68} className="animate-float" />
-                    </div>
-                  )}
-                  <div className="mb-6 mt-3">
-                    <p className="text-sm font-semibold text-[#6B7280] dark:text-[#A1A1AA] mb-2">{plan.name}</p>
-                    <div className="flex items-baseline gap-1 mb-2">
-                      <span className="text-3xl font-black text-[#111827] dark:text-[#F8FAFC]">{plan.price}</span>
-                      <span className="text-sm text-[#6B7280] dark:text-[#A1A1AA]">{plan.period}</span>
-                    </div>
-                    <p className="text-xs text-[#6B7280] dark:text-[#A1A1AA]">{plan.desc}</p>
-                  </div>
-                  <ul className="space-y-3 mb-8 flex-1">
-                    {plan.features.map((f) => (
-                      <li key={f} className="flex items-center gap-2.5 text-sm text-[#111827]/75 dark:text-[#F8FAFC]/75">
-                        <CheckCircle2 size={14} className="text-violet-500 dark:text-violet-400 flex-shrink-0" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href="/pricing"
-                    className={`inline-flex items-center justify-center gap-2 w-full px-5 py-3 font-semibold rounded-xl transition-colors text-sm ${plan.btnClass}`}
+            {BILLING_TIERS.map((tier, i) => {
+              const featured = tier.id === "PREMIUM";
+              const borderClass =
+                tier.id === "PREMIUM"
+                  ? "border-violet-400/50 dark:border-violet-500/40"
+                  : tier.id === "PRO"
+                    ? "border-amber-300/70 dark:border-amber-500/30"
+                    : "border-[#E9DFFF] dark:border-[#2E2146]";
+              const btnClass = featured
+                ? "btn-purple-glow bg-violet-600 hover:bg-violet-500 text-white shadow-[0_8px_24px_rgba(124,58,237,0.35)]"
+                : tier.id === "PRO"
+                  ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-[0_8px_24px_rgba(251,146,60,0.30)]"
+                  : "bg-[#F7F4FF] dark:bg-[#1C142B] border border-[#E9DFFF] dark:border-[#2E2146] text-[#111827] dark:text-[#F8FAFC] hover:bg-violet-50 dark:hover:bg-violet-900/20";
+              return (
+                <ScrollReveal key={tier.id} delay={i * 100}>
+                  <div
+                    className={`relative bg-white dark:bg-[#1C142B] border ${borderClass} rounded-2xl p-7 flex flex-col ${featured ? "shadow-[0_0_48px_rgba(124,58,237,0.12)] dark:shadow-[0_0_48px_rgba(167,139,250,0.08)]" : ""}`}
                   >
-                    Эхлэх <ArrowRight size={14} />
-                  </Link>
-                </div>
-              </ScrollReveal>
-            ))}
+                    {tier.badge && (
+                      <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                        <span
+                          className={`px-3 py-1 ${tier.id === "PRO" ? "bg-amber-500" : "bg-violet-600"} text-white text-xs font-bold rounded-full shadow-[0_0_14px_rgba(139,92,246,0.4)]`}
+                        >
+                          {tier.badge}
+                        </span>
+                      </div>
+                    )}
+                    {featured && (
+                      <div className="absolute -top-12 right-3">
+                        <MascotImage variant="celebrate" size={68} className="animate-float" />
+                      </div>
+                    )}
+                    <div className="mb-6 mt-3">
+                      <p className="text-sm font-semibold text-[#6B7280] dark:text-[#A1A1AA] mb-2">
+                        {tier.name}
+                      </p>
+                      <div className="flex items-baseline gap-1 mb-2">
+                        <span className="text-3xl font-black text-[#111827] dark:text-[#F8FAFC]">
+                          {formatTierPrice(tier, "monthly")}
+                        </span>
+                        {tier.monthlyPrice > 0 && (
+                          <span className="text-sm text-[#6B7280] dark:text-[#A1A1AA]">/сар</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#6B7280] dark:text-[#A1A1AA]">{tier.tagline}</p>
+                    </div>
+                    <ul className="space-y-3 mb-8 flex-1">
+                      {tier.features.map((f) => (
+                        <li
+                          key={f}
+                          className="flex items-center gap-2.5 text-sm text-[#111827]/75 dark:text-[#F8FAFC]/75"
+                        >
+                          <CheckCircle2
+                            size={14}
+                            className="text-violet-500 dark:text-violet-400 flex-shrink-0"
+                          />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                    <Link
+                      href="/pricing"
+                      className={`inline-flex items-center justify-center gap-2 w-full px-5 py-3 font-semibold rounded-xl transition-colors text-sm ${btnClass}`}
+                    >
+                      {tier.monthlyPrice === 0 ? "Үнэгүй эхлэх" : `${tier.name} авах`}
+                      <ArrowRight size={14} />
+                    </Link>
+                  </div>
+                </ScrollReveal>
+              );
+            })}
           </div>
 
           <ScrollReveal className="text-center mt-10">

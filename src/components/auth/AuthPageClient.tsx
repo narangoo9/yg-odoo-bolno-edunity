@@ -226,9 +226,11 @@ function AuthCard({ children }: { children: React.ReactNode }) {
 export function AuthPageClient({
   initialMode,
   registered,
+  referralCode,
 }: {
   initialMode: AuthMode;
   registered?: string;
+  referralCode?: string;
 }) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const isRegister = mode === "register";
@@ -265,7 +267,7 @@ export function AuthPageClient({
                   </button>
                 </p>
               </div>
-              <RegisterForm />
+              <RegisterForm referralCode={referralCode} />
             </AuthCard>
             <p className="mt-5 text-center text-[10px] text-gray-400">
               © 2026 EduNity. Бүх эрх хуулиар хамгаалагдсан.
@@ -406,7 +408,7 @@ export function AuthPageClient({
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.28 }}
                 >
-                  <RegisterForm />
+                  <RegisterForm referralCode={referralCode} />
                 </motion.div>
               )}
             </AnimatePresence>

@@ -56,9 +56,12 @@ const dropdownVariants: Variants = {
 export function DashboardTopbar({
   user,
   unreadNotifications,
+  savedCoursesCount = 0,
 }: {
   user: TopbarUser;
   unreadNotifications: number;
+  /** Student: total saved courses (catalog bookmark); shown as red badge like notifications */
+  savedCoursesCount?: number;
 }) {
   const [langOpen,  setLangOpen]  = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -70,6 +73,8 @@ export function DashboardTopbar({
   const [savedOpen, setSavedOpen] = useState(false);
   const [savedCourses, setSavedCourses] = useState<{ id: string; title: string; slug: string; thumbnailUrl: string | null; instructor: { name: string | null } }[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
+  const [savedBadgeCount, setSavedBadgeCount] = useState(savedCoursesCount);
+  const [savedBadgeShake, setSavedBadgeShake] = useState(savedCoursesCount > 0);
 
   const langRef  = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -77,6 +82,7 @@ export function DashboardTopbar({
   const mounted  = useMounted();
   const router   = useRouter();
   const { openSidebar } = useMobileSidebar();
+  const savedSeenStorageKey = `saved-courses-seen:${user.id}`;
 
   const searchRouteByRole: Record<UserRole, string> = {
     STUDENT: "/student/catalog",
@@ -109,7 +115,19 @@ export function DashboardTopbar({
   }, []);
 
   const openSavedCourses = useCallback(async () => {
-    setSavedOpen((v) => !v);
+    setSavedOpen((isOpen) => {
+      const nextOpen = !isOpen;
+      if (nextOpen) {
+        setSavedBadgeCount(0);
+        setSavedBadgeShake(false);
+        try {
+          window.localStorage.setItem(savedSeenStorageKey, String(savedCoursesCount));
+        } catch {
+          // localStorage can be unavailable in restricted browser contexts.
+        }
+      }
+      return nextOpen;
+    });
     if (savedCourses.length > 0) return;
     setLoadingSaved(true);
     try {
@@ -121,13 +139,32 @@ export function DashboardTopbar({
     } finally {
       setLoadingSaved(false);
     }
-  }, [savedCourses.length]);
+  }, [savedCourses.length, savedCoursesCount, savedSeenStorageKey]);
 
   // Bell shake on mount if there are unread notifications
   useEffect(() => {
     if (notifCount > 0) {
       setBellShake(true);
       const t = setTimeout(() => setBellShake(false), 800);
+      return () => clearTimeout(t);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let seenCount = 0;
+    try {
+      seenCount = Number(window.localStorage.getItem(savedSeenStorageKey) ?? "0");
+    } catch {
+      seenCount = 0;
+    }
+    const unseenCount = Math.max(savedCoursesCount - seenCount, 0);
+    setSavedBadgeCount(unseenCount);
+    setSavedBadgeShake(unseenCount > 0);
+  }, [savedCoursesCount, savedSeenStorageKey]);
+
+  useEffect(() => {
+    if (savedCoursesCount > 0) {
+      const t = setTimeout(() => setSavedBadgeShake(false), 800);
       return () => clearTimeout(t);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -238,10 +275,38 @@ export function DashboardTopbar({
             <button
               onClick={openSavedCourses}
               className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
-              aria-label="Хадгалсан курсууд"
-              title="Хадгалсан курсууд"
+              aria-label={
+                savedBadgeCount > 0
+                  ? `Хадгалсан курсууд (${savedBadgeCount})`
+                  : "Хадгалсан курсууд"
+              }
+              title={
+                savedBadgeCount > 0
+                  ? `Хадгалсан: ${savedBadgeCount} курс`
+                  : "Хадгалсан курсууд"
+              }
             >
-              <Bookmark size={18} className={cn("transition-colors", savedOpen ? "text-violet-600 fill-violet-100" : "text-muted-foreground")} />
+              <Bookmark
+                size={18}
+                className={cn(
+                  "transition-colors",
+                  savedOpen ? "text-violet-600 fill-violet-100" : "text-muted-foreground",
+                  savedBadgeShake && "animate-bell-shake",
+                )}
+              />
+              <AnimatePresence>
+                {savedBadgeCount > 0 && (
+                  <motion.span
+                    key="saved-badge"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    exit={{ scale: 0 }}
+                    className="animate-notif-ring absolute top-1 right-1 min-w-4 h-4 px-1 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-semibold"
+                  >
+                    {savedBadgeCount > 9 ? "9+" : savedBadgeCount}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </button>
             <AnimatePresence>
               {savedOpen && (
@@ -256,6 +321,11 @@ export function DashboardTopbar({
                     <div className="flex items-center gap-2">
                       <Bookmark size={14} className="text-violet-500" />
                       <span className="text-[13px] font-black text-foreground">Хадгалсан курсууд</span>
+                      {savedBadgeCount > 0 && (
+                        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                          {savedBadgeCount > 9 ? "9+" : savedBadgeCount}
+                        </span>
+                      )}
                     </div>
                     <button
                       onClick={() => setSavedOpen(false)}
@@ -453,7 +523,7 @@ export function DashboardTopbar({
           className="flex items-center justify-center rounded-full hover:ring-2 hover:ring-violet-400/60 transition-all"
           title={t("topbar.profile")}
         >
-          <Avatar className="w-8 h-8">
+          <Avatar key={user.image ?? "no-avatar"} className="w-8 h-8">
             <AvatarImage src={user.image ?? undefined} alt={user.name} />
             <AvatarFallback className="text-xs bg-muted dark:bg-slate-700 text-foreground dark:text-slate-200">
               {getInitials(user.name)}

@@ -1,8 +1,25 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { EduNityLogo } from "@/components/layout/EduNityLogo";
 import { OnboardingStepper } from "@/components/onboarding/OnboardingStepper";
+import { OnboardingSkipLink } from "@/components/onboarding/OnboardingSkipLink";
 
-export default function OnboardingLayout({ children }: { children: React.ReactNode }) {
+export default async function OnboardingLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  if (session.user.role === "STUDENT") {
+    const user = await db.user
+      .findUnique({
+        where: { id: session.user.id },
+        select: { onboardingCompleted: true },
+      })
+      .catch(() => null);
+    if (user?.onboardingCompleted) redirect("/student");
+  }
+
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#ede9fe] via-[#f5f2ff] to-[#faf8ff]">
       {/* Subtle grid */}
@@ -27,12 +44,7 @@ export default function OnboardingLayout({ children }: { children: React.ReactNo
 
         <OnboardingStepper />
 
-        <Link
-          href="/student"
-          className="rounded-xl border border-violet-200/80 bg-white/70 px-4 py-2 text-[12px] font-semibold text-violet-600 backdrop-blur-sm transition-all hover:bg-white hover:shadow-sm"
-        >
-          Алгасах →
-        </Link>
+        <OnboardingSkipLink />
       </header>
 
       {/* Page content */}

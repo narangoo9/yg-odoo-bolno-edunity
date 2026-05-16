@@ -6,20 +6,10 @@ import { unstable_cache } from "next/cache";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DashboardTopbar } from "@/components/layout/DashboardTopbar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
-import { RoboAgent } from "@/components/ai/RoboAgent";
+import { RoboAgentClient } from "@/components/ai/RoboAgentClient";
 import { DashboardLayoutClient } from "@/components/layout/DashboardLayoutClient";
 import { dashboardCacheTags } from "@/lib/dashboard-cache";
-
-const getCachedUser = (userId: string) =>
-  unstable_cache(
-    () =>
-      db.user.findUnique({
-        where: { id: userId },
-        select: { xp: true, level: true, streak: true, subscription: { select: { plan: true } } },
-      }),
-    [`layout-user-${userId}`],
-    { revalidate: 30, tags: [dashboardCacheTags.user(userId)] },
-  )();
+import { getCachedDashboardUser } from "@/lib/user/get-dashboard-user";
 
 const getCachedUnreads = (userId: string, isStudent: boolean) =>
   unstable_cache(
@@ -56,14 +46,25 @@ function RightSidebarSkeleton() {
   );
 }
 
+const getCachedSavedCoursesCount = (userId: string) =>
+  unstable_cache(
+    () => db.savedCourse.count({ where: { userId } }),
+    [`layout-saved-courses-count-${userId}`],
+    {
+      revalidate: 15,
+      tags: [dashboardCacheTags.savedCourses(userId)],
+    },
+  )();
+
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   const isStudent = session.user.role === "STUDENT";
-  const [user, unreads] = await Promise.all([
-    getCachedUser(session.user.id).catch(() => null),
+  const [dbUser, unreads, savedCoursesCount] = await Promise.all([
+    getCachedDashboardUser(session.user.id).catch(() => null),
     getCachedUnreads(session.user.id, isStudent).catch(() => ({ notifications: 0, messages: 0 })),
+    isStudent ? getCachedSavedCoursesCount(session.user.id).catch(() => 0) : Promise.resolve(0),
   ]);
 
   return (
@@ -71,16 +72,26 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <div className="flex h-screen bg-[#f5f3ff] dark:bg-[#09090b] overflow-hidden">
         <DashboardSidebar
           role={session.user.role}
-          xp={user?.xp ?? 0}
-          level={user?.level ?? 1}
-          streak={user?.streak ?? 0}
-          subscriptionPlan={user?.subscription?.plan ?? null}
+          xp={dbUser?.xp ?? 0}
+          level={dbUser?.level ?? 1}
+          streak={dbUser?.streak ?? 0}
+          subscriptionPlan={dbUser?.subscription?.plan ?? null}
           messagesBadge={unreads.messages}
-          userName={session.user.name ?? ""}
-          userAvatar={session.user.image ?? null}
+          userName={dbUser?.name ?? session.user.name ?? ""}
+          userAvatar={dbUser?.avatarUrl ?? null}
         />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <DashboardTopbar user={session.user} unreadNotifications={unreads.notifications} />
+          <DashboardTopbar
+            user={{
+              id: session.user.id,
+              name: dbUser?.name ?? session.user.name ?? "",
+              email: session.user.email,
+              image: dbUser?.avatarUrl ?? null,
+              role: session.user.role,
+            }}
+            unreadNotifications={unreads.notifications}
+            savedCoursesCount={savedCoursesCount}
+          />
           <div className="flex flex-1 overflow-hidden">
             <main className="flex-1 min-w-0 overflow-y-auto">
               <div className="mx-auto px-4 py-4 sm:px-5 sm:py-5">
@@ -95,11 +106,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
         </div>
         {isStudent && (
-          <RoboAgent
-            firstName={session.user.name?.split(" ")[0] ?? "Student"}
-            level={user?.level ?? 1}
-            xp={user?.xp ?? 0}
-            streak={user?.streak ?? 0}
+          <RoboAgentClient
+            firstName={dbUser?.name?.split(" ")[0] ?? session.user.name?.split(" ")[0] ?? "Student"}
+            level={dbUser?.level ?? 1}
+            xp={dbUser?.xp ?? 0}
+            streak={dbUser?.streak ?? 0}
           />
         )}
       </div>

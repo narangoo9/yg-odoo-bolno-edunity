@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { updateProfileSchema, type UpdateProfileInput } from "@/modules/auth/domain/schemas";
@@ -26,7 +25,6 @@ export function ProfileForm({ user }: Props) {
   const [isPending, startTransition] = useTransition();
   const [avatarPreview, setAvatarPreview] = useState(user.avatarUrl);
   const router = useRouter();
-  const { update: updateSession } = useSession();
 
   const {
     register,
@@ -64,8 +62,7 @@ export function ProfileForm({ user }: Props) {
         }
 
         toast({ type: "success", title: "Профайл хадгалагдлаа" });
-        // Sync session image with new avatarUrl so header updates immediately
-        await updateSession();
+        setAvatarPreview(result.data.avatarUrl);
         router.refresh();
       } catch {
         toast({ type: "error", title: "Сүлжээний алдаа" });

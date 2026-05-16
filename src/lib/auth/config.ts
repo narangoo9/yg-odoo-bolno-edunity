@@ -6,6 +6,8 @@ export type AuthUserLike = Pick<User, "id"> & {
   role?: UserRole;
   status?: string;
   organizationId?: string | null;
+  name?: string | null;
+  image?: string | null;
 };
 
 export function applyUserToToken(token: JWT, user?: AuthUserLike | null) {
@@ -21,6 +23,13 @@ export function applyUserToToken(token: JWT, user?: AuthUserLike | null) {
     token.organizationId = user.organizationId ?? null;
   }
 
+  if (typeof user.name === "string") {
+    token.name = user.name;
+  }
+  if ("image" in user) {
+    token.picture = user.image;
+  }
+
   return token;
 }
 
@@ -29,8 +38,11 @@ export function applyTokenToSession(session: Session, token: JWT) {
   session.user.role = (token.role as UserRole | undefined) ?? "STUDENT";
   session.user.status = (token.status as string) ?? "ACTIVE";
   session.user.organizationId = (token.organizationId as string | null) ?? null;
-  if (token.picture !== undefined) {
-    session.user.image = (token.picture as string | null) ?? null;
+  if (typeof token.name === "string") {
+    session.user.name = token.name;
+  }
+  if ("picture" in token) {
+    session.user.image = typeof token.picture === "string" ? token.picture : null;
   }
 
   return session;

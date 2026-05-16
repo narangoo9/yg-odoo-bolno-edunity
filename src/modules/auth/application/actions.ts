@@ -4,8 +4,10 @@ import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { getAppUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
-import { signIn, signOut } from "@/lib/auth";
+import { signOut } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
+import { awardXP, XP_REWARDS } from "@/modules/gamification/application/gamification-service";
+import { XpAction } from "@prisma/client";
 import { registerSchema, orgOnboardSchema, forgotPasswordSchema, resetPasswordSchema } from "../domain/schemas";
 import type { RegisterInput, OrgOnboardInput, ForgotPasswordInput, ResetPasswordInput } from "../domain/schemas";
 
@@ -19,7 +21,7 @@ export async function registerUser(input: RegisterInput) {
   }
 
   // Public signup is STUDENT only — instructors come via org invite
-  const { name, email, password } = parsed.data;
+  const { name, email, password, referralCode } = parsed.data;
 
   const existingUser = await db.user.findFirst({
     where: {
@@ -34,16 +36,60 @@ export async function registerUser(input: RegisterInput) {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const newReferralCode = randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
+  const referrer = referralCode
+    ? await db.user.findUnique({
+        where: { referralCode },
+        select: { id: true, referralCode: true },
+      })
+    : null;
 
-  const user = await db.user.create({
-    data: {
-      name,
-      email,
-      passwordHash,
-      role: "STUDENT",
-      status: "PENDING_VERIFICATION",
-    },
+  const user = await db.$transaction(async (tx) => {
+    const createdUser = await tx.user.create({
+      data: {
+        name,
+        email,
+        passwordHash,
+        role: "STUDENT",
+        status: "PENDING_VERIFICATION",
+        referralCode: newReferralCode,
+        referredById: referrer?.id ?? null,
+      },
+    });
+
+    if (referrer) {
+      await tx.referral.create({
+        data: {
+          referrerId: referrer.id,
+          referredId: createdUser.id,
+          code: referrer.referralCode ?? referralCode ?? "",
+          convertedAt: new Date(),
+          rewardXp: XP_REWARDS.REFERRAL_SIGNUP,
+        },
+      });
+
+      await tx.friendship.upsert({
+        where: {
+          requesterId_addresseeId: {
+            requesterId: referrer.id,
+            addresseeId: createdUser.id,
+          },
+        },
+        create: {
+          requesterId: referrer.id,
+          addresseeId: createdUser.id,
+          status: "ACCEPTED",
+        },
+        update: { status: "ACCEPTED" },
+      });
+    }
+
+    return createdUser;
   });
+
+  if (referrer) {
+    await awardXP(referrer.id, XpAction.REFERRAL_SIGNUP, user.id);
+  }
 
   // Create verification token
   const token = randomUUID();
@@ -268,4 +314,48 @@ export async function onboardOrganization(input: OrgOnboardInput) {
   }).catch(() => null);
 
   return { success: true, orgId: result.org.id, adminId: result.admin.id };
+}
+
+// ─── RESEND VERIFICATION ──────────────────────────────────────────────────────
+
+export async function resendVerificationEmail(userId: string) {
+  const appUrl = getAppUrl();
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, status: true },
+  });
+
+  if (!user) return { error: "Хэрэглэгч олдсонгүй" };
+  if (user.status !== "PENDING_VERIFICATION") return { error: "Имэйл аль хэдийн баталгаажсан байна" };
+
+  // Invalidate existing tokens
+  await db.verificationToken.updateMany({
+    where: { userId, type: "email_verify", usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  const token = randomUUID();
+  await db.verificationToken.create({
+    data: {
+      token,
+      type: "email_verify",
+      userId,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const verifyUrl = `${appUrl}/verify-email?token=${token}`;
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[DEV] Resend verification link for ${user.email}: ${verifyUrl}`);
+  }
+
+  sendEmail({
+    to: user.email,
+    subject: "Имэйл хаягаа баталгаажуулна уу",
+    template: "verify-email",
+    data: { name: user.name, verifyUrl },
+  }).catch(() => null);
+
+  return { success: true };
 }

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/index";
 import { formatDate } from "@/lib/utils";
 import { Users, Search } from "lucide-react";
+import { DeleteUserButton } from "@/components/admin/DeleteUserButton";
 
 export const metadata: Metadata = { title: "Хэрэглэгчид" };
 
@@ -139,10 +140,13 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
                     {user.lastLoginAt ? formatDate(user.lastLoginAt) : "—"}
                   </td>
                   <td className="px-4 py-3.5 text-right hidden sm:table-cell">
-                    <a href={`/admin/users/${user.id}`}
-                      className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2.5 py-1 rounded-xl hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors">
-                      Дэлгэрэнгүй
-                    </a>
+                    <div className="flex items-center justify-end gap-2">
+                      <a href={`/admin/users/${user.id}`}
+                        className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2.5 py-1 rounded-xl hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors">
+                        Дэлгэрэнгүй
+                      </a>
+                      <DeleteUserButton userId={user.id} userName={user.name} />
+                    </div>
                   </td>
                 </tr>
               );

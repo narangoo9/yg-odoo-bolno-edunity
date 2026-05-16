@@ -245,10 +245,10 @@ export function LeaderboardClient({
     });
   };
 
-  const myCurrentRank = tab === "weekly" ? myEntry?.weeklyRank : myEntry?.rank;
-  const myCurrentXp   = tab === "weekly" ? myEntry?.weeklyXp   : myEntry?.totalXp;
-
   const myPosition = entries.findIndex(e => e.userId === currentUserId);
+  const myVisibleEntry = myPosition >= 0 ? entries[myPosition] : null;
+  const myCurrentRank = myPosition >= 0 ? myPosition + 1 : tab === "weekly" ? myEntry?.weeklyRank : myEntry?.rank;
+  const myCurrentXp = myVisibleEntry ? getXp(myVisibleEntry) : tab === "weekly" ? myEntry?.weeklyXp : myEntry?.totalXp;
   const nextEntry  = myPosition > 0 ? entries[myPosition - 1] : null;
   const xpToNext   = nextEntry ? (getXp(nextEntry) - (myCurrentXp ?? 0)) : null;
 

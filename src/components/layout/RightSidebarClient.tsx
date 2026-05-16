@@ -159,7 +159,7 @@ export function RightSidebarClient({
             <div className="rounded-2xl border border-border bg-gradient-to-br from-accent/50 to-card dark:from-violet-900/15 dark:to-card p-4">
               <div className="mb-3 flex items-center gap-3">
                 <div className="relative">
-                  <Avatar className="h-11 w-11 ring-2 ring-border">
+                  <Avatar key={user.avatarUrl ?? "no-avatar"} className="h-11 w-11 ring-2 ring-border">
                     <AvatarImage src={user.avatarUrl ?? undefined} alt={user.name} />
                     <AvatarFallback className="bg-accent text-sm font-bold text-primary">
                       {getInitials(user.name)}

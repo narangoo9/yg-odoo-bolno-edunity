@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { updateProfileSchema } from "@/modules/auth/domain/schemas";
 import { ok, unauthorized, badRequest, serverError } from "@/shared/utils/api-response";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 
 export async function GET() {
   try {
@@ -53,6 +55,10 @@ export async function PATCH(req: NextRequest) {
         newData: parsed.data as object,
       },
     });
+
+    revalidateUserDashboard(session.user.id);
+    revalidateTag("admin-analytics");
+    revalidatePath("/", "layout");
 
     return ok(user, "Профайл амжилттай шинэчлэгдлээ");
   } catch {

@@ -7,6 +7,13 @@ import { db } from "@/lib/db";
 import { cached } from "@/lib/cache";
 import { ok, unauthorized, serverError } from "@/shared/utils/api-response";
 
+const leaderboardEntrySelect = {
+  userId: true,
+  weeklyXp: true,
+  monthlyXp: true,
+  totalXp: true,
+} as const;
+
 export async function GET(req: NextRequest) {
   try {
     const session = await auth();
@@ -24,22 +31,32 @@ export async function GET(req: NextRequest) {
     const entries = await cached(
       `leaderboard:${type}:${limit}`,
       60,
-      () =>
-        db.leaderboardEntry.findMany({
-          take: limit,
+      async () => {
+        const leaderboardEntries = await db.leaderboardEntry.findMany({
+          take: Math.min(limit * 2, 200),
           orderBy: { [orderField]: "desc" },
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                avatarUrl: true,
-                streak: true,
-                level: true,
-              },
-            },
+          select: leaderboardEntrySelect,
+        });
+
+        const users = await db.user.findMany({
+          where: { id: { in: [...new Set(leaderboardEntries.map((entry) => entry.userId))] } },
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            streak: true,
+            level: true,
           },
-        })
+        });
+        const usersById = new Map(users.map((user) => [user.id, user]));
+
+        return leaderboardEntries
+          .flatMap((entry) => {
+            const user = usersById.get(entry.userId);
+            return user ? [{ ...entry, user }] : [];
+          })
+          .slice(0, limit);
+      }
     );
 
     const leaderboard = entries.map((entry, idx) => ({
@@ -80,4 +97,3 @@ export async function GET(req: NextRequest) {
     return serverError();
   }
 }
-

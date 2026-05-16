@@ -44,15 +44,34 @@ export default async function AdminCoursesPage({ searchParams }: Props) {
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
-      include: {
+      select: {
+        id: true,
+        title: true,
+        thumbnailUrl: true,
+        price: true,
+        currency: true,
+        status: true,
+        createdAt: true,
         instructor: { select: { name: true, avatarUrl: true } },
         category: { select: { name: true } },
         _count: { select: { enrollments: true, reviews: true, modules: true } },
-        reviews: { select: { rating: true } },
       },
     }),
     db.course.count({ where }),
   ]);
+
+  const courseIds = courses.map((c) => c.id);
+  const ratingRows =
+    courseIds.length > 0
+      ? await db.review.groupBy({
+          by: ["courseId"],
+          _avg: { rating: true },
+          where: { courseId: { in: courseIds } },
+        })
+      : [];
+  const avgRatingByCourse = new Map(
+    ratingRows.map((r) => [r.courseId, Number(r._avg.rating ?? 0)]),
+  );
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -112,10 +131,7 @@ export default async function AdminCoursesPage({ searchParams }: Props) {
           <tbody className="divide-y divide-border">
             {courses.map((course) => {
               const sc = statusConfig[course.status];
-              const avgRating =
-                course.reviews.length > 0
-                  ? course.reviews.reduce((s, r) => s + r.rating, 0) / course.reviews.length
-                  : 0;
+              const avgRating = avgRatingByCourse.get(course.id) ?? 0;
               return (
                 <tr key={course.id} className="hover:bg-muted transition-colors">
                   <td className="px-5 py-3.5">

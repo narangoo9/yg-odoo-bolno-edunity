@@ -20,23 +20,41 @@ const planConfig: Record<string, { label: string; variant: "secondary" | "info" 
   PRO: { label: "Pro", variant: "success" },
 };
 
-export default async function AdminOrganizationsPage() {
+interface PageProps {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function AdminOrganizationsPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user || session.user.role !== "SUPER_ADMIN") redirect("/login");
 
-  const orgs = await db.organization.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      owner: { select: { name: true, email: true } },
-      _count: { select: { members: true, courses: true } },
-    },
-  });
+  const page = Number((await searchParams).page ?? 1);
+  const limit = 24;
+
+  const [orgs, total] = await Promise.all([
+    db.organization.findMany({
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        plan: true,
+        logoUrl: true,
+        createdAt: true,
+        owner: { select: { name: true, email: true } },
+        _count: { select: { members: true, courses: true } },
+      },
+    }),
+    db.organization.count(),
+  ]);
 
   return (
     <div className="space-y-6 animate-fade-up">
       <div>
         <h1 className="text-xl font-bold text-foreground">Байгууллагууд</h1>
-        <p className="text-muted-foreground text-sm mt-1">Нийт {orgs.length} байгууллага</p>
+        <p className="text-muted-foreground text-sm mt-1">Нийт {total} байгууллага</p>
       </div>
 
       {orgs.length === 0 ? (

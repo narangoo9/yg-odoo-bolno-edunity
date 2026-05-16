@@ -5,6 +5,7 @@ export const dashboardCacheTags = {
   sidebar: (userId: string) => `sidebar:${userId}`,
   notifications: (userId: string) => `notifications:${userId}`,
   messages: (userId: string) => `messages:${userId}`,
+  savedCourses: (userId: string) => `saved-courses:${userId}`,
 };
 
 export function revalidateUserDashboard(userId: string) {
@@ -22,4 +23,8 @@ export function revalidateUserNotifications(userId: string) {
 
 export function revalidateUserMessages(userId: string) {
   revalidateTag(dashboardCacheTags.messages(userId));
+}
+
+export function revalidateUserSavedCourses(userId: string) {
+  revalidateTag(dashboardCacheTags.savedCourses(userId));
 }

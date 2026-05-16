@@ -7,23 +7,16 @@ import {
   Check, Crown, Sparkles, BookOpen, Brain, Award, Zap, Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  BILLING_COMPARISON,
+  getBillingTier,
+  tierYearlySavings,
+} from "@/lib/pricing/billing-plans";
 
-const PRICES = {
-  PREMIUM: { monthly: 29900, yearly: 299000 },
-  PRO:     { monthly: 79900, yearly: 799000 },
-};
-
-const COMPARISON = [
-  { feature: "Үнэгүй курсууд",          standard: true,         premium: true,         pro: true },
-  { feature: "Компанийн бүх курс",       standard: false,        premium: true,         pro: true },
-  { feature: "Курс дуусгах сертификат",  standard: true,         premium: true,         pro: true },
-  { feature: "Peer grading",             standard: false,        premium: true,         pro: true },
-  { feature: "Ахиц дэвшлийн аналитик",  standard: "Үндсэн",     premium: "Дэвшилтэт",  pro: "Бүрэн" },
-  { feature: "AI туслах",               standard: false,        premium: "Beta",        pro: true },
-  { feature: "Амьд mentor хичээл",      standard: false,        premium: false,         pro: true },
-  { feature: "Хадгалах сан",            standard: "5 GB",       premium: "20 GB",       pro: "100 GB" },
-  { feature: "Дэмжлэг",                 standard: "Нийгэмлэг",  premium: "Тэргүүлэх",  pro: "Хувийн" },
-];
+const STANDARD_TIER = getBillingTier("STANDARD");
+const PREMIUM_TIER = getBillingTier("PREMIUM");
+const PRO_TIER = getBillingTier("PRO");
+const COMPARISON = BILLING_COMPARISON;
 
 const WHY_FEATURES = [
   { icon: BookOpen, title: "Илүү олон курс",  desc: "Компанийн бүх хаалттай хичээлүүдэд нэвтэрч, мэдлэгээ өргөжүүл." },
@@ -41,8 +34,10 @@ function FeatureValue({ value }: { value: boolean | string }) {
 export function PricingClient() {
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
 
-  const premiumPrice = PRICES.PREMIUM[billing];
-  const proPrice     = PRICES.PRO[billing];
+  const premiumPrice =
+    billing === "monthly" ? PREMIUM_TIER.monthlyPrice : PREMIUM_TIER.yearlyPrice;
+  const proPrice =
+    billing === "monthly" ? PRO_TIER.monthlyPrice : PRO_TIER.yearlyPrice;
 
   return (
     <>
@@ -151,7 +146,7 @@ export function PricingClient() {
               Үнэгүй эхлэх →
             </Link>
             <ul className="space-y-2 flex-1">
-              {["Үнэгүй курсууд", "Үндсэн ахиц хянах", "Нийгэмлэгийн чат", "Курс дуусгах сертификат", "Leaderboard оролцоо", "5 GB тэмдэглэл хадгалах"].map(f => (
+              {STANDARD_TIER.features.map(f => (
                 <li key={f} className="flex items-start gap-2">
                   <div className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
                     <Check size={9} className="text-slate-500" />
@@ -186,9 +181,9 @@ export function PricingClient() {
                 <span className="text-3xl font-black text-violet-900">₮{premiumPrice.toLocaleString()}</span>
                 <span className="text-xs text-violet-400 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
               </div>
-              {billing === "yearly" && (
+              {billing === "yearly" && tierYearlySavings(PREMIUM_TIER) > 0 && (
                 <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-                  Жилд ₮{(PRICES.PREMIUM.monthly * 12 - PRICES.PREMIUM.yearly).toLocaleString()} хэмнэнэ
+                  Жилд ₮{tierYearlySavings(PREMIUM_TIER).toLocaleString()} хэмнэнэ
                 </p>
               )}
             </div>
@@ -199,7 +194,7 @@ export function PricingClient() {
               Premium авах →
             </Link>
             <ul className="space-y-2 flex-1">
-              {["Standard бүгдийг", "Бүх компанийн курс", "Тэргүүлэх дэмжлэг", "Peer grading & review", "Дэвшилтэт аналитик", "Материал татаж авах", "20 GB тэмдэглэл хадгалах", "AI туслах (Beta)"].map(f => (
+              {PREMIUM_TIER.features.map(f => (
                 <li key={f} className="flex items-start gap-2">
                   <div className="w-4 h-4 rounded-full bg-violet-100 flex items-center justify-center shrink-0 mt-0.5">
                     <Check size={9} className="text-violet-600" />
@@ -230,9 +225,9 @@ export function PricingClient() {
                 <span className="text-3xl font-black text-amber-900">₮{proPrice.toLocaleString()}</span>
                 <span className="text-xs text-amber-400 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
               </div>
-              {billing === "yearly" && (
+              {billing === "yearly" && tierYearlySavings(PRO_TIER) > 0 && (
                 <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-                  Жилд ₮{(PRICES.PRO.monthly * 12 - PRICES.PRO.yearly).toLocaleString()} хэмнэнэ
+                  Жилд ₮{tierYearlySavings(PRO_TIER).toLocaleString()} хэмнэнэ
                 </p>
               )}
             </div>
@@ -243,7 +238,7 @@ export function PricingClient() {
               Pro авах →
             </Link>
             <ul className="space-y-2 flex-1">
-              {["Premium бүгдийг", "Хязгааргүй курс хандалт", "Амьд 1:1 mentor хичээл", "Карьерын зөвлөгөө & CV шалгалт", "Хувийн судалгааны бүлэг", "100 GB хадгалах сан", "Хамтарсан сертификат", "Шинэ курст эрт хандах"].map(f => (
+              {PRO_TIER.features.map(f => (
                 <li key={f} className="flex items-start gap-2">
                   <div className="w-4 h-4 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
                     <Check size={9} className="text-amber-600" />

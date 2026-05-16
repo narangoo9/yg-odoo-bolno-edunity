@@ -23,13 +23,39 @@ const INPUT_BASE =
   "dark:bg-violet-900/20 dark:text-white dark:placeholder:text-gray-500 " +
   "dark:focus:bg-violet-900/30 dark:focus:border-violet-500";
 
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  OAuthSignin: "Google руу шилжих үед алдаа гарлаа. Дахин оролдоно уу.",
+  OAuthCallback:
+    "Google-аас буцаж ирэх үед алдаа гарлаа. Google Cloud Console дээр Authorized redirect URI-д `http://localhost:3000/api/auth/callback/google` нэмэгдсэн эсэхийг шалгана уу.",
+  OAuthCreateAccount:
+    "Google хэрэглэгч үүсгэх боломжгүй байна. Өгөгдлийн сангийн холболтыг шалгана уу.",
+  EmailCreateAccount: "Хэрэглэгч үүсгэхэд алдаа гарлаа.",
+  Callback: "Нэвтрэх callback дээр алдаа гарлаа. Server log-оо шалгана уу.",
+  OAuthAccountNotLinked:
+    "Энэ имэйл өөр аргаар бүртгэгдсэн байна. Имэйл/нууц үгээр нэвтэрнэ үү.",
+  EmailSignin: "Имэйл линк илгээх үед алдаа гарлаа.",
+  CredentialsSignin: "Имэйл эсвэл нууц үг буруу байна.",
+  SessionRequired: "Та эхлээд нэвтэрсэн байх шаардлагатай.",
+  AccessDenied: "Нэвтрэх эрх хязгаарлагдсан байна.",
+  Verification: "Имэйл баталгаажуулалт амжилтгүй боллоо.",
+  Configuration:
+    "Auth тохиргоо буруу байна. AUTH_SECRET, GOOGLE_CLIENT_ID/SECRET, NEXTAUTH_URL-г .env файлд шалгана уу.",
+  Default: "Нэвтрэх үед алдаа гарлаа. Дахин оролдоно уу.",
+};
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl");
+  const urlError = searchParams.get("error");
   const [showPassword, setShowPassword] = useState(false);
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(
+    urlError
+      ? `${OAUTH_ERROR_MESSAGES[urlError] ?? OAUTH_ERROR_MESSAGES.Default} (код: ${urlError})`
+      : null,
+  );
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const { onboardingCompleted, getNextIncompleteStep } = useOnboardingStore();
 
   useEffect(() => {
@@ -195,8 +221,35 @@ export function LoginForm() {
 
           <button
             type="button"
-            onClick={() => signIn("google", { callbackUrl: callbackUrl ?? "/dashboard" })}
-            className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-gray-200 bg-white py-3 text-[13px] font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
+            disabled={googleSubmitting}
+            onClick={async () => {
+              setServerError(null);
+              setGoogleSubmitting(true);
+              try {
+                const res = await signIn("google", {
+                  callbackUrl: callbackUrl ?? "/dashboard",
+                  redirect: false,
+                });
+                if (res?.error) {
+                  setServerError(
+                    `${OAUTH_ERROR_MESSAGES[res.error] ?? OAUTH_ERROR_MESSAGES.Default} (код: ${res.error})`,
+                  );
+                  setGoogleSubmitting(false);
+                  return;
+                }
+                if (res?.url) {
+                  window.location.assign(res.url);
+                }
+              } catch (err) {
+                setServerError(
+                  err instanceof Error
+                    ? `Google нэвтрэлт амжилтгүй: ${err.message}`
+                    : "Google нэвтрэлт амжилтгүй боллоо. Дахин оролдоно уу.",
+                );
+                setGoogleSubmitting(false);
+              }
+            }}
+            className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-gray-200 bg-white py-3 text-[13px] font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
           >
             <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -204,7 +257,14 @@ export function LoginForm() {
               <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
             </svg>
-            Google-ээр нэвтрэх
+            {googleSubmitting ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" />
+                Шилжиж байна...
+              </span>
+            ) : (
+              "Google-ээр нэвтрэх"
+            )}
           </button>
         </>
       )}

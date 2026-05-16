@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Award,
@@ -38,9 +38,9 @@ interface CourseSection {
 
 interface TimestampNote {
   id: string;
-  sectionId: string;
+  sectionId: string | null;
   seconds: number;
-  text: string;
+  content: string;
   createdAt: string;
 }
 
@@ -99,7 +99,9 @@ function statusText(status: TaskState) {
 }
 
 function planLabel(plan: MarketplacePlan) {
-  return plan === "ALL_ACCESS" ? "PREMIUM" : plan;
+  if (plan === "PRO") return "Pro";
+  if (plan === "STANDARD") return "Standard";
+  return "Free";
 }
 
 function sectionRange(section: CourseSection) {
@@ -125,7 +127,6 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
   const [tab, setTab] = useState<TabId>("overview");
   const [focusMode, setFocusMode] = useState(false);
   const [currentSeconds, setCurrentSeconds] = useState(sections[0]?.startSeconds ?? 0);
-  const [storageReady, setStorageReady] = useState(false);
   const [completedSections, setCompletedSections] = useState<Set<string>>(() => new Set());
   const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
   const [notes, setNotes] = useState<TimestampNote[]>([]);
@@ -142,31 +143,110 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
   const estimatedDuration = formatSeconds(sections.at(-1)?.endSeconds ?? sections.at(-1)?.startSeconds ?? 0);
   const activeTaskState = taskStates[activeSection?.id ?? ""] ?? "not-started";
 
+  // Mutable refs updated each render so callbacks always see fresh values
+  const activeSectionRef = useRef(activeSection);
+  activeSectionRef.current = activeSection;
+  const currentSecondsRef = useRef(currentSeconds);
+  currentSecondsRef.current = currentSeconds;
+
+  // Watch progress accumulation
+  const watchDeltaRef = useRef(0);
+  const prevProgressSecondsRef = useRef<number | null>(null);
+  const lastWatchFlushRef = useRef(0);
+
+  const flushWatchProgress = useCallback(() => {
+    const section = activeSectionRef.current;
+    if (!section) return;
+    const delta = Math.min(Math.floor(watchDeltaRef.current), 3600);
+    watchDeltaRef.current = 0;
+    prevProgressSecondsRef.current = null;
+    if (delta <= 0) return;
+    fetch("/api/v1/learning/watch-progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        courseId: course.id,
+        sectionId: section.id,
+        lastPositionSec: Math.floor(currentSecondsRef.current),
+        watchedDeltaSec: delta,
+      }),
+    }).catch(() => {});
+  }, [course.id]);
+
   useEffect(() => {
     if (activeChapter) setOpenChapterId(activeChapter.id);
   }, [activeChapter?.id]);
 
+  // Load DB state on mount; fall back to localStorage if API fails
   useEffect(() => {
-    setCompletedSections(new Set(readJson<string[]>(`${storagePrefix}:completed-sections`, [])));
-    setTaskStates(readJson<Record<string, TaskState>>(`${storagePrefix}:tasks`, {}));
-    setNotes(readJson<TimestampNote[]>(`${storagePrefix}:notes`, []));
-    setStorageReady(true);
-  }, [storagePrefix]);
+    const prefix = storagePrefix;
+    const initialSectionId = sections[0]?.id ?? "";
 
-  useEffect(() => {
-    if (!storageReady) return;
-    window.localStorage.setItem(`${storagePrefix}:completed-sections`, JSON.stringify([...completedSections]));
-  }, [completedSections, storagePrefix, storageReady]);
+    type LsNote = { id: string; sectionId: string; seconds: number; text: string; createdAt: string };
+    type DbState = {
+      completedSectionIds: string[];
+      taskStates: Record<string, TaskState>;
+      watchProgress: Record<string, { lastPositionSec: number; watchTimeSec: number }>;
+      notes: TimestampNote[];
+    };
 
-  useEffect(() => {
-    if (!storageReady) return;
-    window.localStorage.setItem(`${storagePrefix}:tasks`, JSON.stringify(taskStates));
-  }, [taskStates, storagePrefix, storageReady]);
+    fetch(`/api/v1/learning/progress?courseId=${course.id}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((json: { data: DbState }) => {
+        const { completedSectionIds, taskStates: dbTaskStates, watchProgress, notes: dbNotes } = json.data;
 
+        const dbHasData =
+          completedSectionIds.length > 0 ||
+          Object.keys(dbTaskStates).length > 0 ||
+          dbNotes.length > 0;
+
+        if (!dbHasData) {
+          // One-time migration from localStorage
+          const lsCompleted = readJson<string[]>(`${prefix}:completed-sections`, []);
+          const lsTasks = readJson<Record<string, TaskState>>(`${prefix}:tasks`, {});
+          const lsNotes = readJson<LsNote[]>(`${prefix}:notes`, []);
+          setCompletedSections(new Set(lsCompleted));
+          setTaskStates(lsTasks);
+          setNotes(
+            lsNotes.map((n) => ({
+              id: n.id,
+              sectionId: n.sectionId,
+              seconds: n.seconds,
+              content: n.text,
+              createdAt: n.createdAt,
+            })),
+          );
+        } else {
+          setCompletedSections(new Set(completedSectionIds));
+          setTaskStates(dbTaskStates);
+          setNotes(dbNotes);
+          const wp = watchProgress[initialSectionId];
+          if (wp?.lastPositionSec) setCurrentSeconds(wp.lastPositionSec);
+        }
+      })
+      .catch(() => {
+        const lsNotes = readJson<LsNote[]>(`${prefix}:notes`, []);
+        setCompletedSections(new Set(readJson<string[]>(`${prefix}:completed-sections`, [])));
+        setTaskStates(readJson<Record<string, TaskState>>(`${prefix}:tasks`, {}));
+        setNotes(
+          lsNotes.map((n) => ({
+            id: n.id,
+            sectionId: n.sectionId,
+            seconds: n.seconds,
+            content: n.text,
+            createdAt: n.createdAt,
+          })),
+        );
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course.id]);
+
+  // Flush watch progress on unmount
   useEffect(() => {
-    if (!storageReady) return;
-    window.localStorage.setItem(`${storagePrefix}:notes`, JSON.stringify(notes));
-  }, [notes, storagePrefix, storageReady]);
+    return () => {
+      flushWatchProgress();
+    };
+  }, [flushWatchProgress]);
 
   useEffect(() => {
     if (!activeSection) return;
@@ -212,26 +292,64 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
 
   const setTaskState = (sectionId: string, state: TaskState) => {
     setTaskStates((current) => ({ ...current, [sectionId]: state }));
+    fetch("/api/v1/learning/task-state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseId: course.id, sectionId, state }),
+    }).catch(() => {});
   };
 
   const completeActiveSection = () => {
     setCompletedSections((current) => new Set([...current, activeSection.id]));
-    setTaskState(activeSection.id, "completed");
+    setTaskStates((current) => ({ ...current, [activeSection.id]: "completed" }));
+    fetch("/api/v1/learning/section-complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseId: course.id, sectionId: activeSection.id }),
+    }).catch(() => {});
   };
 
-  const addTimestampNote = () => {
+  const addTimestampNote = async () => {
     if (!noteDraft.trim()) return;
+    const content = noteDraft.trim();
+    const tempId = `temp-${crypto.randomUUID()}`;
     setNotes((current) => [
       {
-        id: crypto.randomUUID(),
+        id: tempId,
         sectionId: activeSection.id,
         seconds: Math.floor(currentSeconds),
-        text: noteDraft.trim(),
+        content,
         createdAt: new Date().toISOString(),
       },
       ...current,
     ]);
     setNoteDraft("");
+
+    try {
+      const res = await fetch("/api/v1/learning/study-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseId: course.id,
+          sectionId: activeSection.id,
+          seconds: Math.floor(currentSeconds),
+          content,
+        }),
+      });
+      const json = (await res.json()) as { data?: { id: string } };
+      if (json?.data?.id) {
+        setNotes((current) => current.map((n) => (n.id === tempId ? { ...n, id: json.data!.id } : n)));
+      }
+    } catch {
+      // Optimistic note stays in local state
+    }
+  };
+
+  const deleteNote = (noteId: string) => {
+    setNotes((current) => current.filter((n) => n.id !== noteId));
+    if (!noteId.startsWith("temp-")) {
+      fetch(`/api/v1/learning/study-notes/${noteId}`, { method: "DELETE" }).catch(() => {});
+    }
   };
 
   const selectSection = (section: CourseSection, seconds = section.startSeconds) => {
@@ -246,6 +364,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
       return;
     }
 
+    flushWatchProgress();
     setActiveId(section.id);
     setCurrentSeconds(seconds);
     updatePersistentTimestamp(seconds);
@@ -452,6 +571,20 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
               onProgress={(seconds) => {
                 setCurrentSeconds(seconds);
                 updatePersistentTimestamp(seconds);
+
+                // Accumulate watch delta from actual playback
+                const prev = prevProgressSecondsRef.current;
+                if (prev !== null && seconds > prev && seconds - prev <= 5) {
+                  watchDeltaRef.current += seconds - prev;
+                }
+                prevProgressSecondsRef.current = seconds;
+
+                // Flush to DB every 20s of wall time
+                const now = Date.now();
+                if (now - lastWatchFlushRef.current >= 20_000) {
+                  lastWatchFlushRef.current = now;
+                  flushWatchProgress();
+                }
               }}
               onPlayingChange={setPersistentPlaying}
             />
@@ -481,9 +614,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                   ? "border-slate-200 bg-slate-50"
                   : accessPlan === "PRO"
                     ? "border-amber-200 bg-amber-50"
-                    : accessPlan === "ALL_ACCESS"
-                      ? "border-emerald-200 bg-emerald-50"
-                      : "border-violet-200 bg-violet-50",
+                    : "border-violet-200 bg-violet-50",
               )}
             >
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Access Plan</p>
@@ -495,9 +626,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                       ? "bg-slate-200 text-slate-500"
                       : accessPlan === "PRO"
                         ? "bg-amber-200 text-amber-700"
-                        : accessPlan === "ALL_ACCESS"
-                          ? "bg-emerald-200 text-emerald-700"
-                          : "bg-violet-200 text-violet-700",
+                        : "bg-violet-200 text-violet-700",
                   )}
                 >
                   {accessPlan === "FREE" ? <Lock size={18} /> : <Award size={18} />}
@@ -510,9 +639,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                         ? "text-slate-700"
                         : accessPlan === "PRO"
                           ? "text-amber-700"
-                          : accessPlan === "ALL_ACCESS"
-                            ? "text-emerald-700"
-                            : "text-violet-700",
+                          : "text-violet-700",
                     )}
                   >
                     {planLabel(accessPlan)}
@@ -668,7 +795,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                     />
                     <button
                       type="button"
-                      onClick={addTimestampNote}
+                      onClick={() => void addTimestampNote()}
                       className="mt-3 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-black text-white hover:bg-violet-500"
                     >
                       <Send size={14} /> Save timestamp note
@@ -693,11 +820,11 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                             <p className="font-mono text-[11px] font-black text-violet-700">
                               {noteSection ? `Section ${noteSection.order}` : "Section"} · {formatSeconds(note.seconds)}
                             </p>
-                            <p className="mt-1.5 text-[13px] leading-6 text-slate-700">{note.text}</p>
+                            <p className="mt-1.5 text-[13px] leading-6 text-slate-700">{note.content}</p>
                           </button>
                           <button
                             type="button"
-                            onClick={() => setNotes((current) => current.filter((item) => item.id !== note.id))}
+                            onClick={() => deleteNote(note.id)}
                             className="mt-2 text-[11px] font-black text-slate-400 hover:text-rose-600"
                           >
                             Delete

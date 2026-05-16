@@ -4,15 +4,18 @@ import { getDashboardHomeByRole } from "@/lib/dashboard-routes";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_ROUTES = ["/", "/courses", "/pricing", "/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+const PUBLIC_ROUTES = ["/", "/courses", "/pricing", "/login", "/register", "/forgot-password", "/reset-password"];
 const ADMIN_ROUTES = ["/admin"];
 const ORG_ROUTES = ["/org"];
 const INSTRUCTOR_ROUTES = ["/instructor"];
 const PUBLIC_FILE = /\.(.*)$/;
 
+// Routes a PENDING_VERIFICATION user is allowed to visit
+const VERIFICATION_ALLOWED_PREFIXES = ["/verify-email", "/login", "/register", "/api/auth", "/api/v1/auth"];
+
 const { auth } = NextAuth(authConfig);
 
-export default auth((req: NextRequest & { auth: { user?: { role?: string } } | null }) => {
+export default auth((req: NextRequest & { auth: { user?: { role?: string; status?: string } } | null }) => {
   const { pathname } = req.nextUrl;
   const session = req.auth;
 
@@ -31,6 +34,21 @@ export default auth((req: NextRequest & { auth: { user?: { role?: string } } | n
   }
 
   const role = session.user.role;
+  const status = session.user.status;
+
+  // Unverified users: only allow verification-related routes
+  if (status === "PENDING_VERIFICATION") {
+    const allowed = VERIFICATION_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p));
+    if (!allowed) {
+      return NextResponse.redirect(new URL("/verify-email", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Verified user visiting /verify-email → redirect to their dashboard
+  if (pathname.startsWith("/verify-email")) {
+    return NextResponse.redirect(new URL(getDashboardHomeByRole(role), req.url));
+  }
 
   if (pathname === "/dashboard") {
     return NextResponse.redirect(new URL(getDashboardHomeByRole(role), req.url));

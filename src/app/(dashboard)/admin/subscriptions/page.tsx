@@ -47,9 +47,14 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
-      include: {
+      select: {
+        id: true,
+        plan: true,
+        status: true,
+        currentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
+        createdAt: true,
         user: { select: { name: true, email: true, avatarUrl: true } },
-        payments: { where: { status: "COMPLETED" }, select: { amount: true } },
       },
     }),
     db.subscription.count({ where }),
@@ -58,6 +63,24 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
       _count: { _all: true },
     }).catch(() => []),
   ]);
+
+  const subscriptionIds = subscriptions.map((s) => s.id);
+  const paidBySubscription =
+    subscriptionIds.length > 0
+      ? await db.payment.groupBy({
+          by: ["subscriptionId"],
+          _sum: { amount: true },
+          where: {
+            subscriptionId: { in: subscriptionIds },
+            status: "COMPLETED",
+          },
+        })
+      : [];
+  const paidMap = new Map(
+    paidBySubscription
+      .filter((p): p is typeof p & { subscriptionId: string } => Boolean(p.subscriptionId))
+      .map((p) => [p.subscriptionId, Number(p._sum.amount ?? 0)]),
+  );
 
   const totalRevenue = await db.payment.aggregate({
     _sum: { amount: true },
@@ -145,7 +168,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
             ) : subscriptions.map((sub) => {
               const pl = planLabels[sub.plan];
               const sl = statusLabels[sub.status];
-              const totalPaid = sub.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+              const totalPaid = paidMap.get(sub.id) ?? 0;
               return (
                 <tr key={sub.id} className="hover:bg-muted dark:hover:bg-slate-700/50 transition-colors">
                   <td className="px-5 py-3.5">

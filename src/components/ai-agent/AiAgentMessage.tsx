@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { AgentAction } from "@/lib/agent/agent-types";
 import { AiAgentActionButton } from "./AiAgentActionButton";
@@ -59,6 +59,7 @@ export interface ChatMessage {
   timestamp: number;
   actions?: AgentAction[];
   suggestions?: string[];
+  toolChips?: Array<{ id: string; title: string; detail?: string }>;
 }
 
 interface Props {
@@ -92,6 +93,24 @@ export function AiAgentMessage({ message, isLatest, onNavigate, onMessage, disab
             <span className="whitespace-pre-wrap">{message.content}</span>
           )}
         </div>
+
+        {isAssistant && message.toolChips && message.toolChips.length > 0 && (
+          <motion.div
+            initial={false}
+            animate={{ opacity: 1 }}
+            className="flex flex-wrap gap-1"
+          >
+            {message.toolChips.map((chip) => (
+              <span
+                key={chip.id}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-200"
+                title={chip.detail}
+              >
+                {chip.title}
+              </span>
+            ))}
+          </motion.div>
+        )}
 
         {/* Action buttons (assistant only) */}
         {isAssistant && message.actions && message.actions.length > 0 && (

@@ -90,7 +90,7 @@ export default function GoalPage() {
       step={1}
     >
       <div className="mb-4">
-        <h2 className="text-[18px] font-bold text-gray-800">Сонирхлын чиглэлзэ сонгоно уу</h2>
+        <h2 className="text-[18px] font-bold text-gray-800">Сонирхлын чиглэлээ сонгоно уу</h2>
         <p className="mt-1 text-[13px] text-gray-400">
           Та хамгийн их сонирхож буй 3 чиглэлийг сонгох боломжтой.
         </p>

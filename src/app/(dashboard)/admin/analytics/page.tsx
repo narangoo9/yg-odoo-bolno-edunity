@@ -4,14 +4,14 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Users, BookOpen, TrendingUp, DollarSign, Award, Star } from "lucide-react";
 import { StatsCard } from "@/components/dashboard/StatsCard";
-import { AdminCharts } from "@/components/analytics/AdminCharts";
+import { AdminChartsLazy } from "@/components/analytics/AdminChartsLazy";
 import {
-  getAdminOverview,
-  getRevenueByMonth,
-  getEnrollmentsByMonth,
-  getTopCourses,
-  getUserGrowthByMonth,
-} from "@/modules/analytics/infrastructure/queries";
+  getCachedAdminOverview,
+  getCachedEnrollmentsByMonth,
+  getCachedRevenueByMonth,
+  getCachedTopCourses,
+  getCachedUserGrowthByMonth,
+} from "@/lib/admin/cached-analytics";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Аналитик" };
@@ -21,25 +21,24 @@ export default async function AdminAnalyticsPage() {
   if (!session?.user || session.user.role !== "SUPER_ADMIN") redirect("/login");
 
   const [overview, revenue, enrollments, topCourses, userGrowth] = await Promise.all([
-    getAdminOverview().catch(() => ({
+    getCachedAdminOverview().catch(() => ({
       totalUsers: 0, activeStudents: 0, totalCourses: 0, publishedCourses: 0,
       totalEnrollments: 0, totalCertificates: 0, totalRevenue: 0, newUsersThisMonth: 0,
     })),
-    getRevenueByMonth(12).catch(() => []),
-    getEnrollmentsByMonth(12).catch(() => []),
-    getTopCourses(10).catch(() => []),
-    getUserGrowthByMonth(12).catch(() => []),
+    getCachedRevenueByMonth(12).catch(() => []),
+    getCachedEnrollmentsByMonth(12).catch(() => []),
+    getCachedTopCourses(10).catch(() => []),
+    getCachedUserGrowthByMonth(12).catch(() => []),
   ]);
 
-  // Extra stats
-  const [totalReviews, avgRating, completionRate] = await Promise.all([
+  const [totalReviews, avgRating, completedEnrollments, totalEnrollments] = await Promise.all([
     db.review.count().catch(() => 0),
     db.review.aggregate({ _avg: { rating: true } }).then((r) => Number(r._avg.rating ?? 0)).catch(() => 0),
-    db.enrollment.count({ where: { status: "COMPLETED" } }).then(async (completed) => {
-      const total = await db.enrollment.count();
-      return total > 0 ? Math.round((completed / total) * 100) : 0;
-    }).catch(() => 0),
+    db.enrollment.count({ where: { status: "COMPLETED" } }).catch(() => 0),
+    db.enrollment.count().catch(() => 0),
   ]);
+  const completionRate =
+    totalEnrollments > 0 ? Math.round((completedEnrollments / totalEnrollments) * 100) : 0;
 
   const recentPayments = await db.payment.findMany({
     where: { status: "COMPLETED" },
@@ -100,7 +99,7 @@ export default async function AdminAnalyticsPage() {
       </div>
 
       {/* Charts */}
-      <AdminCharts
+      <AdminChartsLazy
         revenueData={revenue}
         enrollmentData={enrollments}
         userGrowthData={userGrowth}

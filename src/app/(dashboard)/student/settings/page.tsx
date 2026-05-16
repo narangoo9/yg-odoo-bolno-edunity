@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import Image from "next/image";
 import { ProfileForm } from "@/components/forms/ProfileForm";
+import { MascotImage } from "@/components/brand/MascotImage";
 import { DangerZone } from "@/components/forms/DangerZone";
 import { StudentCertificatesSection } from "@/components/student/StudentCertificatesSection";
 import { SubscriptionSection } from "@/components/student/SubscriptionSection";
@@ -98,13 +98,11 @@ export default async function SettingsPage() {
                 </p>
                 <div className="absolute -bottom-2 right-8 w-3 h-3 bg-white border-r border-b border-[#E9DFFF] rotate-45" />
               </div>
-              <Image
-                src="/assets/mascot/mascot-wave.png"
-                alt=""
-                width={80}
-                height={80}
-                unoptimized
-                className="object-contain animate-float drop-shadow-md"
+              <MascotImage
+                variant="wave"
+                size={80}
+                priority
+                className="animate-float drop-shadow-md"
               />
             </div>
           </div>
@@ -126,14 +124,7 @@ export default async function SettingsPage() {
               <p className="text-[11px] text-[#6B7280]">Нэр, зураг, танилцуулга</p>
             </div>
           </div>
-          <Image
-            src="/assets/mascot/mascot-book.png"
-            alt=""
-            width={36}
-            height={36}
-            unoptimized
-            className="object-contain opacity-70"
-          />
+          <MascotImage variant="book" size={36} imageClassName="opacity-70" />
         </div>
         <ProfileForm
           user={{
@@ -158,14 +149,7 @@ export default async function SettingsPage() {
               <p className="text-[11px] text-[#6B7280]">Имэйл баталгаажилт, нууцлал</p>
             </div>
           </div>
-          <Image
-            src="/assets/mascot/mascot-thinking.png"
-            alt=""
-            width={36}
-            height={36}
-            unoptimized
-            className="object-contain opacity-70"
-          />
+          <MascotImage variant="thinking" size={36} imageClassName="opacity-70" />
         </div>
 
         <div className="rounded-xl border border-[#E9DFFF] bg-[#F7F4FF] divide-y divide-[#E9DFFF] overflow-hidden">
@@ -210,14 +194,7 @@ export default async function SettingsPage() {
               <p className="text-[11px] text-red-400">Энэ үйлдэл буцаах боломжгүй ⚠️</p>
             </div>
           </div>
-          <Image
-            src="/assets/mascot/mascot-thinking.png"
-            alt=""
-            width={36}
-            height={36}
-            unoptimized
-            className="object-contain opacity-50"
-          />
+          <MascotImage variant="thinking" size={36} imageClassName="opacity-50" />
         </div>
 
         <div className="rounded-xl border border-red-100 bg-red-50/40 p-4">

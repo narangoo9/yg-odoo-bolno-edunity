@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { hasActiveCourseAccess } from "@/lib/subscription-access";
-import { revalidateUserNotifications, revalidateUserSidebar } from "@/lib/dashboard-cache";
+import { revalidateUserNotifications, revalidateUserSidebar, revalidateUserSavedCourses } from "@/lib/dashboard-cache";
 import { generateSlug } from "@/shared/utils/slug";
 import {
   createCourseSchema,
@@ -871,6 +871,7 @@ export async function toggleSavedCourse(courseId: string): Promise<{ saved: bool
 
   if (existing) {
     await db.savedCourse.delete({ where: { id: existing.id } });
+    revalidateUserSavedCourses(session.user.id);
     revalidatePath("/student");
     revalidatePath("/student/courses");
     revalidatePath("/student/catalog");
@@ -878,6 +879,7 @@ export async function toggleSavedCourse(courseId: string): Promise<{ saved: bool
     return { saved: false };
   } else {
     await db.savedCourse.create({ data: { userId: session.user.id, courseId } });
+    revalidateUserSavedCourses(session.user.id);
     revalidatePath("/student");
     revalidatePath("/student/courses");
     revalidatePath("/student/catalog");

@@ -9,8 +9,13 @@ import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/index";
 import { getInitials, cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
-import { postCourseMessage } from "@/modules/comments/application/actions";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { MascotImage } from "@/components/brand/MascotImage";
+import {
+  createSupabaseChatClient,
+  createSupabaseRealtimeClient,
+  type ChatMessageRow,
+} from "@/lib/supabase/client";
 
 // ── STICKER DATA ───────────────────────────────────────────────────────────────
 const STICKER_PREFIX = "__sticker__";
@@ -35,9 +40,10 @@ const REACTION_STICKERS = [
 ] as const;
 
 // ── TYPES ──────────────────────────────────────────────────────────────────────
-interface User { id: string; name: string; avatarUrl: string | null }
+interface User { id: string; chatUserId: string; name: string; avatarUrl: string | null }
 interface CourseChannel {
   id: string; title: string; thumbnailUrl: string | null;
+  chatConversationId: string;
   instructor: User;
   enrollments: { student: User }[];
 }
@@ -45,6 +51,7 @@ interface Enrollment { course: CourseChannel }
 interface ChannelMessage {
   id: string; body: string; createdAt: Date;
   contentId: string; author: User;
+  status?: "sending" | "sent" | "error";
 }
 interface DM {
   id: string; body: string; createdAt: Date; isRead: boolean;
@@ -53,6 +60,7 @@ interface DM {
 }
 interface Props {
   currentUserId: string;
+  currentChatUserId: string;
   currentUser: User;
   enrollments: Enrollment[];
   channelMessages: ChannelMessage[];
@@ -60,7 +68,7 @@ interface Props {
 }
 
 type ChannelType = "course" | "dm";
-interface ActiveChannel { type: ChannelType; id: string; name: string; avatar?: string | null }
+interface ActiveChannel { type: ChannelType; id: string; conversationId?: string; name: string; avatar?: string | null }
 interface Reaction { key: string; count: number }
 
 // ── WELCOME BANNER ─────────────────────────────────────────────────────────────
@@ -110,7 +118,7 @@ function ReactionPopup({ onReact, onClose }: {
 function MessageBubble({
   msg, isMe, reactions, onReact,
 }: {
-  msg: { id: string; body: string; createdAt: Date | string; author: User };
+  msg: { id: string; body: string; createdAt: Date | string; author: User; status?: "sending" | "sent" | "error" };
   isMe: boolean;
   reactions: Reaction[];
   onReact: (key: string) => void;
@@ -178,7 +186,11 @@ function MessageBubble({
               {isMe && (
                 <div className="flex items-center gap-1 mb-0.5 justify-end">
                   <span className="text-[10px] text-white/50">
-                    {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
+                    {msg.status === "sending"
+                      ? "Sending..."
+                      : msg.status === "error"
+                        ? "Failed"
+                        : formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
                   </span>
                   <svg width="16" height="9" viewBox="0 0 16 9" fill="none" className="shrink-0 transition-transform duration-200 group-hover:translate-x-0.5">
                     <path d="M1 4.5L4.5 8L10 2"  stroke="rgba(255,255,255,0.5)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -335,12 +347,25 @@ function RecommendationBanner() {
 }
 
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────────
+async function getRealtimeToken() {
+  const response = await fetch("/api/supabase/realtime-token", {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to start realtime chat.");
+  }
+
+  return response.json() as Promise<{ token: string; userId: string; expiresAt: string }>;
+}
+
 export function MessagesClient({
-  currentUserId, currentUser, enrollments, channelMessages, dms,
+  currentUserId, currentChatUserId, currentUser, enrollments, channelMessages, dms,
 }: Props) {
   const [active, setActive] = useState<ActiveChannel | null>(
     enrollments[0]
-      ? { type: "course", id: enrollments[0].course.id, name: enrollments[0].course.title, avatar: enrollments[0].course.thumbnailUrl }
+      ? { type: "course", id: enrollments[0].course.id, conversationId: enrollments[0].course.chatConversationId, name: enrollments[0].course.title, avatar: enrollments[0].course.thumbnailUrl }
       : null,
   );
   const [input,           setInput]           = useState("");
@@ -349,15 +374,165 @@ export function MessagesClient({
   const [isPending,       startTransition]    = useTransition();
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [messageReactions, setMessageReactions] = useState<Record<string, Reaction[]>>({});
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [typingUserIds, setTypingUserIds] = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
+  const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const memberByChatId = new Map<string, User>();
+  memberByChatId.set(currentChatUserId, currentUser);
+  enrollments.forEach(({ course }) => {
+    memberByChatId.set(course.instructor.chatUserId, course.instructor);
+    course.enrollments.forEach(({ student }) => memberByChatId.set(student.chatUserId, student));
+  });
+
+  const mapSupabaseMessage = (row: ChatMessageRow): ChannelMessage => ({
+    id: row.id,
+    body: row.content,
+    createdAt: new Date(row.created_at),
+    contentId: row.conversation_id,
+    author: memberByChatId.get(row.sender_id) ?? {
+      id: row.sender_id,
+      chatUserId: row.sender_id,
+      name: "Unknown user",
+      avatarUrl: null,
+    },
+    status: "sent",
+  });
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [active, localMessages]);
 
+  useEffect(() => {
+    if (active?.type !== "course" || !active.conversationId) return;
+
+    let cancelled = false;
+    let channel: RealtimeChannel | null = null;
+    const activeConversationId = active.conversationId;
+
+    async function connect() {
+      try {
+        const conversationId = activeConversationId;
+        setChatError(null);
+        let canUsePostgresChanges = false;
+
+        try {
+          const { token } = await getRealtimeToken();
+          if (cancelled) return;
+
+          const supabaseWithAuth = createSupabaseChatClient(token);
+          const { data, error } = await supabaseWithAuth
+            .from("messages")
+            .select("id, conversation_id, sender_id, content, created_at, read_at")
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: true })
+            .limit(200);
+
+          if (error) throw error;
+          if (cancelled) return;
+
+          const loadedMessages = (data ?? []).map(row => mapSupabaseMessage(row as ChatMessageRow));
+          setLocalMessages(prev => [
+            ...prev.filter(message => message.contentId !== conversationId),
+            ...loadedMessages,
+          ]);
+          canUsePostgresChanges = true;
+        } catch (error) {
+          if (!cancelled) {
+            console.warn("Supabase message history unavailable; using realtime broadcast only.", error);
+          }
+        }
+
+        const supabase = createSupabaseRealtimeClient();
+        channel = supabase
+          .channel(`conversation:${conversationId}`, {
+            config: {
+              broadcast: { self: false },
+              presence: { key: currentChatUserId },
+            },
+          });
+
+        if (canUsePostgresChanges) {
+          channel.on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "messages",
+              filter: `conversation_id=eq.${conversationId}`,
+            },
+            payload => {
+              const nextMessage = mapSupabaseMessage(payload.new as ChatMessageRow);
+              setLocalMessages(prev => {
+                if (prev.some(message => message.id === nextMessage.id)) return prev;
+                return [...prev, nextMessage];
+              });
+            },
+          );
+        }
+
+        channel
+          .on("broadcast", { event: "message" }, payload => {
+            const row = payload.payload as ChatMessageRow | undefined;
+            if (!row?.id || row.sender_id === currentChatUserId) return;
+            const nextMessage = mapSupabaseMessage(row);
+            setLocalMessages(prev => {
+              if (prev.some(message => message.id === nextMessage.id)) return prev;
+              return [...prev, nextMessage];
+            });
+          })
+          .on("broadcast", { event: "typing" }, payload => {
+            const userId = payload.payload?.userId as string | undefined;
+            const isTyping = Boolean(payload.payload?.isTyping);
+            if (!userId || userId === currentChatUserId) return;
+            setTypingUserIds(prev => {
+              const next = new Set(prev);
+              if (isTyping) next.add(userId);
+              else next.delete(userId);
+              return next;
+            });
+          })
+          .on("presence", { event: "sync" }, () => {
+            if (!channel) return;
+            setOnlineUserIds(new Set(Object.keys(channel.presenceState())));
+          })
+          .subscribe(status => {
+            if (status === "SUBSCRIBED") {
+              channel?.track({ userId: currentChatUserId, onlineAt: new Date().toISOString() });
+            }
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+              setChatError("Realtime chat connection failed. Check Supabase env and RLS settings.");
+            }
+          });
+
+        realtimeChannelRef.current = channel;
+      } catch (error) {
+        if (!cancelled) {
+          setChatError(error instanceof Error ? error.message : "Realtime chat failed.");
+        }
+      }
+    }
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      realtimeChannelRef.current = null;
+      setOnlineUserIds(new Set());
+      setTypingUserIds(new Set());
+      if (channel) {
+        channel.unsubscribe();
+      }
+    };
+  }, [active?.conversationId, active?.type, currentChatUserId]);
+
   const activeMessages = active?.type === "course"
-    ? localMessages.filter(m => m.contentId === active.id)
+    ? localMessages.filter(m => m.contentId === active.conversationId)
     : dms
         .filter(m =>
           (m.senderId === currentUserId && m.recipientId === active?.id) ||
@@ -382,38 +557,102 @@ export function MessagesClient({
     if (count > 0) unreadCounts[course.id] = count;
   });
 
+  const sendSupabaseMessage = (body: string) => {
+    if (active?.type !== "course" || !active.conversationId) return;
+    const conversationId = active.conversationId;
+    const tempId = `opt-${crypto.randomUUID()}`;
+    const optimistic: ChannelMessage = {
+      id: tempId,
+      body,
+      createdAt: new Date(),
+      contentId: conversationId,
+      author: currentUser,
+      status: "sending",
+    };
+    setLocalMessages(prev => [...prev, optimistic]);
+
+    startTransition(async () => {
+      try {
+        const { token } = await getRealtimeToken();
+        const supabase = createSupabaseChatClient(token);
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: conversationId,
+            sender_id: currentChatUserId,
+            content: body,
+          })
+          .select("id, conversation_id, sender_id, content, created_at, read_at")
+          .single();
+
+        if (error) throw error;
+        const savedMessage = mapSupabaseMessage(data as ChatMessageRow);
+        realtimeChannelRef.current?.send({
+          type: "broadcast",
+          event: "message",
+          payload: data as ChatMessageRow,
+        });
+        setLocalMessages(prev => {
+          const withoutTemp = prev.filter(message => message.id !== tempId);
+          if (withoutTemp.some(message => message.id === savedMessage.id)) return withoutTemp;
+          return [...withoutTemp, savedMessage];
+        });
+      } catch {
+        const broadcastMessage: ChatMessageRow = {
+          id: tempId,
+          conversation_id: conversationId,
+          sender_id: currentChatUserId,
+          content: body,
+          created_at: new Date().toISOString(),
+          read_at: null,
+        };
+        const result = await realtimeChannelRef.current?.send({
+          type: "broadcast",
+          event: "message",
+          payload: broadcastMessage,
+        });
+        setLocalMessages(prev =>
+          prev.map(message =>
+            message.id === tempId
+              ? { ...message, status: result === "ok" ? "sent" : "error" }
+              : message,
+          ),
+        );
+      }
+    });
+  };
+
   const handleSend = () => {
-    if (!input.trim() || !active) return;
+    if (!input.trim()) return;
     const body = input.trim();
     setInput("");
-
-    if (active.type === "course") {
-      const optimistic: ChannelMessage = {
-        id: `opt-${Date.now()}`, body, createdAt: new Date(),
-        contentId: active.id, author: currentUser,
-      };
-      setLocalMessages(prev => [...prev, optimistic]);
-      startTransition(async () => {
-        try { await postCourseMessage(active.id, body); }
-        catch { setLocalMessages(prev => prev.filter(m => m.id !== optimistic.id)); }
-      });
-    }
+    sendSupabaseMessage(body);
+    realtimeChannelRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { userId: currentChatUserId, isTyping: false },
+    });
   };
 
   const handleStickerSend = (sticker: typeof ROBO_STICKERS[number]) => {
-    if (!active) return;
-    const body = `${STICKER_PREFIX}${sticker.key}`;
-    const optimistic: ChannelMessage = {
-      id: `opt-sticker-${Date.now()}`, body, createdAt: new Date(),
-      contentId: active.id, author: currentUser,
-    };
-    setLocalMessages(prev => [...prev, optimistic]);
-    if (active.type === "course") {
-      startTransition(async () => {
-        try { await postCourseMessage(active.id, body); }
-        catch { setLocalMessages(prev => prev.filter(m => m.id !== optimistic.id)); }
+    sendSupabaseMessage(`${STICKER_PREFIX}${sticker.key}`);
+  };
+
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    realtimeChannelRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { userId: currentChatUserId, isTyping: value.trim().length > 0 },
+    });
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      realtimeChannelRef.current?.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { userId: currentChatUserId, isTyping: false },
       });
-    }
+    }, 1200);
   };
 
   const handleReact = (msgId: string, key: string) => {
@@ -481,7 +720,7 @@ export function MessagesClient({
                 <button
                   key={course.id}
                   onClick={() =>
-                    setActive({ type: "course", id: course.id, name: course.title, avatar: course.thumbnailUrl })
+                    setActive({ type: "course", id: course.id, conversationId: course.chatConversationId, name: course.title, avatar: course.thumbnailUrl })
                   }
                   className={cn(
                     "group flex items-center gap-2 w-full px-2.5 py-2.5 rounded-xl text-[12px] font-medium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.99]",
@@ -553,6 +792,7 @@ export function MessagesClient({
                   {activeCourse && (
                     <p className="text-[10px] text-muted-foreground">
                       {members.length} members · {activeCourse.instructor.name}
+                      {onlineUserIds.size > 0 ? ` · ${onlineUserIds.size} online` : ""}
                     </p>
                   )}
                 </div>
@@ -593,6 +833,11 @@ export function MessagesClient({
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
               <WelcomeBanner />
+              {chatError && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] font-semibold text-destructive">
+                  {chatError}
+                </div>
+              )}
 
               {activeMessages.length === 0 && (
                 <div className="text-center py-8">
@@ -611,6 +856,13 @@ export function MessagesClient({
                   onReact={key => handleReact(msg.id, key)}
                 />
               ))}
+              {typingUserIds.size > 0 && (
+                <div className="text-[11px] font-medium text-muted-foreground">
+                  {Array.from(typingUserIds)
+                    .map(userId => memberByChatId.get(userId)?.name ?? "Someone")
+                    .join(", ")} typing...
+                </div>
+              )}
               <div ref={bottomRef} />
             </div>
 
@@ -631,7 +883,7 @@ export function MessagesClient({
                     ref={inputRef}
                     type="text"
                     value={input}
-                    onChange={e => setInput(e.target.value)}
+                    onChange={e => handleInputChange(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
                     }}

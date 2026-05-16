@@ -10,7 +10,7 @@ import {
 import { RobotIllustration } from "@/components/brand/RobotIllustration";
 import { LearningArtwork } from "@/components/course/LearningArtwork";
 import { getCourses } from "@/modules/courses/infrastructure/queries";
-import { AIMentorChatClient } from "@/components/ai/AIMentorChatClient";
+import { AIAgentChat } from "@/components/ai/AIAgentChat";
 
 export const metadata: Metadata = { title: "AI Ментор" };
 
@@ -28,9 +28,14 @@ const TIPS = [
   "Streak тасраагүй байх нь суралцах дадлыг тогтоход хамгийн чухал.",
 ];
 
-export default async function AiMentorPage() {
+type PageProps = {
+  searchParams: Promise<{ courseId?: string; lessonId?: string }>;
+};
+
+export default async function AiMentorPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  const sp = await searchParams;
 
   const today = new Date();
   const dayNames = ["Ням", "Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба"];
@@ -96,11 +101,14 @@ export default async function AiMentorPage() {
       {/* Chat + sidebar layout */}
       <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
         {/* Left: Chat */}
-        <AIMentorChatClient
+        <AIAgentChat
           firstName={firstName}
           level={level}
           xp={xp}
           streak={streak}
+          currentPage="/student/ai-mentor"
+          currentCourseId={sp.courseId}
+          currentLessonId={sp.lessonId}
         />
 
         {/* Right column */}
