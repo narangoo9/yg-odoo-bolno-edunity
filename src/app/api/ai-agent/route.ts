@@ -16,6 +16,7 @@ import { runAgent } from "@/lib/agent/agent-engine";
  * Works without any paid AI API — falls back to rule-based logic automatically.
  */
 export async function POST(req: NextRequest) {
+  // Public endpoint: anonymous users get rule-based help; authenticated users get personalized context.
   // ── Auth ────────────────────────────────────────────────────────────────────
   let userId: string | null = null;
   try {

@@ -1,20 +1,21 @@
 import type Stripe from "stripe";
 import type { SubscriptionPlan, SubscriptionStatus } from "@prisma/client";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 
 export function planFromStripePriceId(priceId: string): Extract<SubscriptionPlan, "STANDARD" | "PREMIUM" | "PRO"> {
   const map: Record<string, Extract<SubscriptionPlan, "STANDARD" | "PREMIUM" | "PRO">> = {
-    [process.env.STRIPE_PRICE_STANDARD ?? ""]: "STANDARD",
-    [process.env.STRIPE_PRICE_PREMIUM ?? ""]: "PREMIUM",
-    [process.env.STRIPE_PRICE_PRO ?? ""]: "PRO",
-    [process.env.STRIPE_PREMIUM_MONTHLY_PRICE_ID ?? ""]: "PREMIUM",
-    [process.env.STRIPE_PREMIUM_YEARLY_PRICE_ID ?? ""]: "PREMIUM",
-    [process.env.STRIPE_PRO_MONTHLY_PRICE_ID ?? ""]: "PRO",
-    [process.env.STRIPE_PRO_YEARLY_PRICE_ID ?? ""]: "PRO",
-    [process.env.STRIPE_STUDENT_MONTHLY_PRICE_ID ?? ""]: "PREMIUM",
-    [process.env.STRIPE_STUDENT_YEARLY_PRICE_ID ?? ""]: "PREMIUM",
-    [process.env.STRIPE_INSTRUCTOR_MONTHLY_PRICE_ID ?? ""]: "PRO",
-    [process.env.STRIPE_INSTRUCTOR_YEARLY_PRICE_ID ?? ""]: "PRO",
+    [env.stripeStandardPriceId]: "STANDARD",
+    [env.stripePremiumPriceId]: "PREMIUM",
+    [env.stripeProPriceId]: "PRO",
+    [env.stripePremiumMonthlyPriceId]: "PREMIUM",
+    [env.stripePremiumYearlyPriceId]: "PREMIUM",
+    [env.stripeProMonthlyPriceId]: "PRO",
+    [env.stripeProYearlyPriceId]: "PRO",
+    [env.stripeStudentMonthlyPriceId]: "PREMIUM",
+    [env.stripeStudentYearlyPriceId]: "PREMIUM",
+    [env.stripeInstructorMonthlyPriceId]: "PRO",
+    [env.stripeInstructorYearlyPriceId]: "PRO",
   };
 
   delete map[""];

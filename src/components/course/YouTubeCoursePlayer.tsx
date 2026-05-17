@@ -47,6 +47,15 @@ interface TimestampNote {
 type TabId = "overview" | "description" | "tasks" | "notes";
 type TaskState = "not-started" | "draft" | "submitted" | "completed";
 
+interface TaskSubmission {
+  id: string;
+  status: string;
+  score: number | null;
+  submittedAt: string;
+  reviewCount: number;
+  completedReviewCount: number;
+}
+
 interface Props {
   course: {
     id: string;
@@ -129,6 +138,13 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
   const [currentSeconds, setCurrentSeconds] = useState(sections[0]?.startSeconds ?? 0);
   const [completedSections, setCompletedSections] = useState<Set<string>>(() => new Set());
   const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
+  const [taskSubmissions, setTaskSubmissions] = useState<Record<string, TaskSubmission>>({});
+  const [taskDraft, setTaskDraft] = useState("");
+  const [taskUrl, setTaskUrl] = useState("");
+  const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
+  const [taskSubmitSuccess, setTaskSubmitSuccess] = useState<string | null>(null);
+  const [submittingTask, setSubmittingTask] = useState(false);
+  const [certificate, setCertificate] = useState<{ id: string; certificateNo: string; verificationCode: string } | null>(null);
   const [notes, setNotes] = useState<TimestampNote[]>([]);
   const [noteDraft, setNoteDraft] = useState("");
   const [upgradeReason, setUpgradeReason] = useState<string | null>(null);
@@ -142,6 +158,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
   const allowedSectionCount = getAllowedLearningItemCount(accessPlan, sections.length);
   const estimatedDuration = formatSeconds(sections.at(-1)?.endSeconds ?? sections.at(-1)?.startSeconds ?? 0);
   const activeTaskState = taskStates[activeSection?.id ?? ""] ?? "not-started";
+  const activeTaskSubmission = taskSubmissions[activeSection?.id ?? ""];
+  const activeSectionCompleted = activeSection ? completedSections.has(activeSection.id) : false;
 
   // Mutable refs updated each render so callbacks always see fresh values
   const activeSectionRef = useRef(activeSection);
@@ -186,6 +204,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
     type DbState = {
       completedSectionIds: string[];
       taskStates: Record<string, TaskState>;
+      taskSubmissions: Record<string, TaskSubmission>;
+      certificate: { id: string; certificateNo: string; verificationCode: string } | null;
       watchProgress: Record<string, { lastPositionSec: number; watchTimeSec: number }>;
       notes: TimestampNote[];
     };
@@ -193,11 +213,20 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
     fetch(`/api/v1/learning/progress?courseId=${course.id}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((json: { data: DbState }) => {
-        const { completedSectionIds, taskStates: dbTaskStates, watchProgress, notes: dbNotes } = json.data;
+        const {
+          completedSectionIds,
+          taskStates: dbTaskStates,
+          taskSubmissions: dbTaskSubmissions,
+          certificate: dbCertificate,
+          watchProgress,
+          notes: dbNotes,
+        } = json.data;
 
         const dbHasData =
           completedSectionIds.length > 0 ||
           Object.keys(dbTaskStates).length > 0 ||
+          Object.keys(dbTaskSubmissions).length > 0 ||
+          dbCertificate != null ||
           dbNotes.length > 0;
 
         if (!dbHasData) {
@@ -207,6 +236,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
           const lsNotes = readJson<LsNote[]>(`${prefix}:notes`, []);
           setCompletedSections(new Set(lsCompleted));
           setTaskStates(lsTasks);
+          setTaskSubmissions({});
+          setCertificate(null);
           setNotes(
             lsNotes.map((n) => ({
               id: n.id,
@@ -219,6 +250,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
         } else {
           setCompletedSections(new Set(completedSectionIds));
           setTaskStates(dbTaskStates);
+          setTaskSubmissions(dbTaskSubmissions);
+          setCertificate(dbCertificate);
           setNotes(dbNotes);
           const wp = watchProgress[initialSectionId];
           if (wp?.lastPositionSec) setCurrentSeconds(wp.lastPositionSec);
@@ -228,6 +261,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
         const lsNotes = readJson<LsNote[]>(`${prefix}:notes`, []);
         setCompletedSections(new Set(readJson<string[]>(`${prefix}:completed-sections`, [])));
         setTaskStates(readJson<Record<string, TaskState>>(`${prefix}:tasks`, {}));
+        setTaskSubmissions({});
+        setCertificate(null);
         setNotes(
           lsNotes.map((n) => ({
             id: n.id,
@@ -290,23 +325,66 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
     }))
     .filter((chapter) => chapter.sections.length > 0);
 
-  const setTaskState = (sectionId: string, state: TaskState) => {
-    setTaskStates((current) => ({ ...current, [sectionId]: state }));
-    fetch("/api/v1/learning/task-state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ courseId: course.id, sectionId, state }),
-    }).catch(() => {});
-  };
-
   const completeActiveSection = () => {
     setCompletedSections((current) => new Set([...current, activeSection.id]));
-    setTaskStates((current) => ({ ...current, [activeSection.id]: "completed" }));
+    setTaskStates((current) => {
+      const currentState = current[activeSection.id];
+      return { ...current, [activeSection.id]: currentState === "completed" ? "completed" : "draft" };
+    });
     fetch("/api/v1/learning/section-complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ courseId: course.id, sectionId: activeSection.id }),
     }).catch(() => {});
+  };
+
+  const submitActiveTask = async () => {
+    if (!activeSection || submittingTask) return;
+    setTaskSubmitError(null);
+    setTaskSubmitSuccess(null);
+
+    if (!activeSectionCompleted) {
+      setTaskSubmitError("Эхлээд энэ video section-ийг дуустал үзнэ үү.");
+      return;
+    }
+    if (taskDraft.trim().length < 20) {
+      setTaskSubmitError("Task submission хамгийн багадаа 20 тэмдэгттэй байх ёстой.");
+      return;
+    }
+
+    setSubmittingTask(true);
+    try {
+      const res = await fetch("/api/v1/learning/task-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseId: course.id,
+          sectionId: activeSection.id,
+          content: taskDraft.trim(),
+          submissionUrl: taskUrl.trim(),
+        }),
+      });
+      const json = (await res.json()) as {
+        success: boolean;
+        error?: string;
+        data?: TaskSubmission & { assignedReviewers?: number };
+      };
+      if (!res.ok || !json.success || !json.data) {
+        setTaskSubmitError(json.error ?? "Task илгээхэд алдаа гарлаа.");
+        return;
+      }
+      setTaskSubmissions((current) => ({ ...current, [activeSection.id]: json.data! }));
+      setTaskStates((current) => ({ ...current, [activeSection.id]: "submitted" }));
+      setTaskSubmitSuccess(
+        json.data.assignedReviewers && json.data.assignedReviewers > 0
+          ? `${json.data.assignedReviewers} reviewer-д илгээгдлээ. Peer review дуусахад score гарна.`
+          : "Task хадгалагдлаа. Reviewer олдох хүртэл peer review queue-д харагдана.",
+      );
+    } catch {
+      setTaskSubmitError("Сүлжээний алдаа. Дахин оролдоно уу.");
+    } finally {
+      setSubmittingTask(false);
+    }
   };
 
   const addTimestampNote = async () => {
@@ -566,7 +644,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
               title={activeSection.title}
               onEnded={() => {
                 completeActiveSection();
-                if (nextSection) selectSection(nextSection);
+                setTab("tasks");
+                setTaskSubmitSuccess("Video дууслаа. Одоо энэ section-ийн task-аа илгээнэ үү.");
               }}
               onProgress={(seconds) => {
                 setCurrentSeconds(seconds);
@@ -731,45 +810,97 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                         <p className="text-[11px] font-black uppercase tracking-wide text-violet-700">Section task</p>
                         <h3 className="mt-2 text-[17px] font-black text-slate-900">{activeSection.title}</h3>
                         <p className="mt-2 text-[13px] leading-6 text-slate-600">
-                          Mark your work as draft, submitted, or completed. Completion also updates the watch progress.
+                          Video дууссаны дараа энэ section-ийн даалгавраа илгээж peer review-д оруулна. Бүх section
+                          task үнэлэгдсэний дараа certificate автоматаар нээгдэнэ.
                         </p>
                       </div>
                       <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-violet-700 shadow-sm">
-                        {statusText(activeTaskState)}
+                        {activeTaskSubmission?.status ?? statusText(activeTaskState)}
                       </span>
                     </div>
 
-                    <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-                      <button
-                        type="button"
-                        onClick={() => setTaskState(activeSection.id, "draft")}
-                        className="rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-[13px] font-black text-violet-700 hover:bg-violet-50"
-                      >
-                        Save draft
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskState(activeSection.id, "submitted")}
-                        className="rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-[13px] font-black text-violet-700 hover:bg-violet-50"
-                      >
-                        Submit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={completeActiveSection}
-                        className="rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-black text-white hover:bg-violet-500"
-                      >
-                        Complete
-                      </button>
+                    <div className="mt-4 rounded-xl border border-violet-100 bg-white p-3.5">
+                      <p className="text-[12px] font-black text-slate-800">Даалгавар</p>
+                      <p className="mt-1.5 text-[13px] leading-6 text-slate-600">
+                        <span className="font-bold">{activeSection.title}</span> хэсгээс сурсан гол санаа, хийсэн алхам,
+                        гарсан үр дүнгээ тайлбарла. Код, дизайн, файл эсвэл demo байгаа бол холбоосоо хавсарга.
+                      </p>
                     </div>
+
+                    {!activeSectionCompleted ? (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] font-semibold text-amber-700">
+                        Энэ task video section дуустал үзсэний дараа идэвхжинэ.
+                      </div>
+                    ) : null}
+
+                    {activeTaskSubmission ? (
+                      <div className="mt-4 rounded-xl border border-white bg-white p-3.5 text-[13px] text-slate-600">
+                        <p className="font-black text-slate-800">Илгээсэн task</p>
+                        <p className="mt-1">
+                          Review: {activeTaskSubmission.completedReviewCount}/{activeTaskSubmission.reviewCount}
+                          {activeTaskSubmission.score != null ? ` · Score: ${Math.round(activeTaskSubmission.score)}/100` : ""}
+                        </p>
+                        {activeTaskSubmission.status === "GRADED" ? (
+                          <p className="mt-2 font-semibold text-emerald-600">Peer review дууссан.</p>
+                        ) : (
+                          <p className="mt-2 text-slate-500">Peer review дуусахыг хүлээж байна.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-4 space-y-3">
+                        <textarea
+                          value={taskDraft}
+                          onChange={(event) => setTaskDraft(event.target.value)}
+                          disabled={!activeSectionCompleted || submittingTask}
+                          placeholder="Юу хийсэн, хэрхэн хийсэн, ямар үр дүн гарсан талаар бичнэ үү..."
+                          className="min-h-[150px] w-full resize-none rounded-xl border border-violet-100 bg-white p-4 text-[14px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+                        />
+                        <input
+                          value={taskUrl}
+                          onChange={(event) => setTaskUrl(event.target.value)}
+                          disabled={!activeSectionCompleted || submittingTask}
+                          placeholder="Submission URL (optional)"
+                          className="h-10 w-full rounded-xl border border-violet-100 bg-white px-3 text-[13px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void submitActiveTask()}
+                          disabled={!activeSectionCompleted || submittingTask}
+                          className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-black text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Send size={14} /> {submittingTask ? "Илгээж байна..." : "Submit for peer review"}
+                        </button>
+                      </div>
+                    )}
+
+                    {taskSubmitError ? (
+                      <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-[12px] font-semibold text-red-700">
+                        {taskSubmitError}
+                      </p>
+                    ) : null}
+                    {taskSubmitSuccess ? (
+                      <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[12px] font-semibold text-emerald-700">
+                        {taskSubmitSuccess}
+                      </p>
+                    ) : null}
+                    {certificate ? (
+                      <a
+                        href="/student/settings#certificates"
+                        className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-[13px] font-black text-white hover:bg-emerald-500"
+                      >
+                        <Award size={14} /> Certificate авах
+                      </a>
+                    ) : null}
                   </div>
 
                   <div className="rounded-xl border border-violet-100 bg-white p-4">
                     <p className="text-[11px] font-black uppercase tracking-wide text-violet-600">Next step</p>
                     <p className="mt-2 text-[13px] leading-6 text-slate-600">
-                      {nextSection
-                        ? `After finishing, continue to Section ${nextSection.order}: ${nextSection.title}.`
-                        : "This is the final section in the course."}
+                      {activeTaskSubmission
+                        ? nextSection
+                          ? `Task илгээгдсэн. Одоо Section ${nextSection.order}: ${nextSection.title} руу үргэлжлүүлж болно.`
+                          : "Энэ course-ийн сүүлийн section. Peer reviews дуусахад certificate шалгана."
+                        : "Video дууссаны дараа task илгээж байж дараагийн алхам бүрэн хаагдана."}
                     </p>
                     {nextSection ? (
                       <button
@@ -780,6 +911,12 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                         <Play size={14} /> Next section
                       </button>
                     ) : null}
+                    <a
+                      href="/student/peer-review"
+                      className="mt-2 inline-flex items-center gap-2 rounded-xl border border-violet-200 px-4 py-2.5 text-[13px] font-black text-violet-700 hover:bg-violet-50"
+                    >
+                      <ClipboardCheck size={14} /> Peer review
+                    </a>
                   </div>
                 </div>
               ) : null}

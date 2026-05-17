@@ -21,7 +21,7 @@ type ChatTurn = {
   suggestions?: string[];
 };
 
-function toolLabel(name: string): string {
+export function toolLabel(name: string): string {
   const map: Record<string, string> = {
     create_study_plan: "✓ Төлөвлөгөө үүсгэсэн",
     create_todo: "✓ Todo нэмэгдсэн",
@@ -34,7 +34,7 @@ function toolLabel(name: string): string {
   return map[name] ?? `✓ ${name}`;
 }
 
-function toolDetail(name: string, output: unknown): string | undefined {
+export function toolDetail(name: string, output: unknown): string | undefined {
   try {
     const o = output as Record<string, unknown>;
     if (name === "create_study_plan" && o?.todosCreated != null) {
@@ -50,7 +50,7 @@ function toolDetail(name: string, output: unknown): string | undefined {
   }
 }
 
-function agentHttpErrorMn(status: number, serverError?: string): string {
+export function agentHttpErrorMn(status: number, serverError?: string): string {
   if (status === 401) {
     return "Нэвтрэх шаардлагатай. Дахин нэвтэрнэ үү.";
   }

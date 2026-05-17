@@ -1,8 +1,7 @@
 "use client";
 
 import { motion, type Variants } from "framer-motion";
-import Link from "next/link";
-import { ArrowRight, BookOpen, Award, Trophy } from "lucide-react";
+import { BookOpen, Award, Trophy } from "lucide-react";
 import { MascotImage } from "@/components/brand/MascotImage";
 import { DashboardTourWrapper } from "@/components/onboarding/DashboardTourWrapper";
 

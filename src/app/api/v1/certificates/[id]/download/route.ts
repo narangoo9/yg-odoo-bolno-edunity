@@ -4,6 +4,7 @@ import { generateCertificatePdf } from "@/modules/certificates/infrastructure/ce
 import { db } from "@/lib/db";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  // Private endpoint: owner, matching organization admin, or super admin can download.
   const { id } = await params;
   const session = await auth();
   if (!session?.user) {
@@ -12,16 +13,29 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const cert = await db.certificate.findUnique({
     where: { id },
-    select: { id: true, studentId: true, certificateNo: true },
+    select: {
+      id: true,
+      studentId: true,
+      organizationId: true,
+      certificateNo: true,
+      course: { select: { organizationId: true } },
+    },
   });
 
   if (!cert) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Only the certificate owner or admins can download
-  if (
-    cert.studentId !== session.user.id &&
-    !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)
-  ) {
+  const certificateOrganizationId = cert.organizationId ?? cert.course?.organizationId ?? null;
+  const orgAdminForCertificate =
+    session.user.role === "ORG_ADMIN" &&
+    Boolean(certificateOrganizationId) &&
+    certificateOrganizationId === session.user.organizationId;
+  const canDownload =
+    cert.studentId === session.user.id ||
+    session.user.role === "SUPER_ADMIN" ||
+    orgAdminForCertificate;
+
+  // Only the certificate owner, matching organization admin, or super admin can download.
+  if (!canDownload) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

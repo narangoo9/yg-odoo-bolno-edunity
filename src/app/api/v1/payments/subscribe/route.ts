@@ -3,25 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStripe } from "@/lib/stripe";
 import { getAppUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 
 /* Maps plan+billing → Stripe price ID.
    Falls back to STUDENT/INSTRUCTOR IDs if plan-specific IDs are not set. */
 const PRICE_MAP: Record<string, Record<string, string>> = {
   PREMIUM: {
-    monthly: process.env.STRIPE_PREMIUM_MONTHLY_PRICE_ID
-      ?? process.env.STRIPE_STUDENT_MONTHLY_PRICE_ID
-      ?? "",
-    yearly: process.env.STRIPE_PREMIUM_YEARLY_PRICE_ID
-      ?? process.env.STRIPE_STUDENT_YEARLY_PRICE_ID
-      ?? "",
+    monthly: env.stripePremiumMonthlyPriceId || env.stripeStudentMonthlyPriceId,
+    yearly: env.stripePremiumYearlyPriceId || env.stripeStudentYearlyPriceId,
   },
   PRO: {
-    monthly: process.env.STRIPE_PRO_MONTHLY_PRICE_ID
-      ?? process.env.STRIPE_INSTRUCTOR_MONTHLY_PRICE_ID
-      ?? "",
-    yearly: process.env.STRIPE_PRO_YEARLY_PRICE_ID
-      ?? process.env.STRIPE_INSTRUCTOR_YEARLY_PRICE_ID
-      ?? "",
+    monthly: env.stripeProMonthlyPriceId || env.stripeInstructorMonthlyPriceId,
+    yearly: env.stripeProYearlyPriceId || env.stripeInstructorYearlyPriceId,
   },
 };
 

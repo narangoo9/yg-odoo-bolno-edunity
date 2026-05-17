@@ -1,10 +1,11 @@
 import { createGroq } from "@ai-sdk/groq";
+import { env } from "@/lib/env";
 
 const PRIMARY = "llama-3.3-70b-versatile" as const;
 const FALLBACK = "llama-3.1-8b-instant" as const;
 
 export function getGroqProvider() {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
+  const apiKey = env.groqApiKey;
   if (!apiKey) return null;
   return createGroq({ apiKey });
 }

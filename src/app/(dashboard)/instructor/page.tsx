@@ -3,8 +3,8 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
-  BookOpen, Users, Award, BarChart3, Plus, ArrowRight,
-  Star, TrendingUp, GraduationCap, Zap,
+  BookOpen, Users, Award, Plus, ArrowRight,
+  Star, TrendingUp, GraduationCap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/index";
 import { getInstructorAnalytics, getInstructorCourseStats } from "@/modules/analytics/infrastructure/queries";

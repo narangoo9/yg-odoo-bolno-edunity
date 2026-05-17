@@ -1,11 +1,12 @@
 import Stripe from "stripe";
 import { getAppUrl } from "@/lib/app-url";
+import { env } from "@/lib/env";
 
 let stripeClient: Stripe | null = null;
 
 export function getStripe() {
   if (!stripeClient) {
-    const apiKey = process.env.STRIPE_SECRET_KEY;
+    const apiKey = env.stripeSecretKey;
     if (!apiKey) {
       throw new Error("STRIPE_SECRET_KEY is not configured");
     }
@@ -21,16 +22,16 @@ export function getStripe() {
 
 export const SUBSCRIPTION_PRICES = {
   STUDENT: {
-    monthly: process.env.STRIPE_STUDENT_MONTHLY_PRICE_ID ?? "",
-    yearly: process.env.STRIPE_STUDENT_YEARLY_PRICE_ID ?? "",
+    monthly: env.stripeStudentMonthlyPriceId,
+    yearly: env.stripeStudentYearlyPriceId,
   },
   INSTRUCTOR: {
-    monthly: process.env.STRIPE_INSTRUCTOR_MONTHLY_PRICE_ID ?? "",
-    yearly: process.env.STRIPE_INSTRUCTOR_YEARLY_PRICE_ID ?? "",
+    monthly: env.stripeInstructorMonthlyPriceId,
+    yearly: env.stripeInstructorYearlyPriceId,
   },
   ORGANIZATION: {
-    monthly: process.env.STRIPE_ORG_MONTHLY_PRICE_ID ?? "",
-    yearly: process.env.STRIPE_ORG_YEARLY_PRICE_ID ?? "",
+    monthly: env.stripeOrgMonthlyPriceId,
+    yearly: env.stripeOrgYearlyPriceId,
   },
 };
 

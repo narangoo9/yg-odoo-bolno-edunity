@@ -1,5 +1,5 @@
 import type { ElementType } from "react";
-import { BookOpen, Code2, Palette, Cpu, BarChart2, Globe, Lock, Zap } from "lucide-react";
+import { Code2, Palette, Cpu, BarChart2, Globe, Lock, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const THEMES = [

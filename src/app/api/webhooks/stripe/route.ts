@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { headers } from "next/headers";
 import type Stripe from "stripe";
+import { env } from "@/lib/env";
 import { getStripe } from "@/lib/stripe";
 import { db } from "@/lib/db";
 import {
@@ -15,13 +16,14 @@ import {
 } from "@/lib/stripe/subscription-sync";
 
 export async function POST(req: NextRequest) {
+  // Public signed endpoint: Stripe authenticates requests with stripe-signature.
   const stripe = getStripe();
   const body = await req.text();
   const signature = (await headers()).get("stripe-signature");
 
   if (!signature) return new Response("No signature", { status: 400 });
 
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const webhookSecret = env.stripeWebhookSecret;
   if (!webhookSecret) {
     console.error("STRIPE_WEBHOOK_SECRET is not configured");
     return new Response("Webhook not configured", { status: 503 });

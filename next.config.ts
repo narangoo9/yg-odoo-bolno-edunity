@@ -31,10 +31,6 @@ const createNextConfig = (phase: string): NextConfig => {
   return {
     output: "standalone",
 
-    // Pre-existing lint warnings/errors in legacy code should not block builds.
-    // Run `npm run lint` separately to audit them.
-    eslint: { ignoreDuringBuilds: true },
-
     images: {
       remotePatterns: [
         { protocol: "https", hostname: "**.cloudinary.com" },

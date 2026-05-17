@@ -318,7 +318,6 @@ export function AdminCalendar() {
           ) : (
             <div className="space-y-2">
               {upcomingEvents.slice(0, 5).map((ev) => {
-                const colorDef = EVENT_COLORS.find((c) => c.value === ev.color) ?? EVENT_COLORS[0];
                 return (
                   <div key={ev.id} className="flex items-center gap-2.5 cursor-pointer" onClick={() => setSelectedDate(ev.date)}>
                     <div className={cn("w-2 h-2 rounded-full shrink-0", ev.color)} />

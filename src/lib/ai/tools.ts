@@ -2,7 +2,7 @@ import { tool, generateText, zodSchema } from "ai";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { prismaJson, type AgentPageContext } from "@/lib/ai/context";
-import { getFallbackModel, getPrimaryModel } from "@/lib/ai/groq";
+import { getFallbackModel } from "@/lib/ai/groq";
 import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import {
   createNoteInputSchema,

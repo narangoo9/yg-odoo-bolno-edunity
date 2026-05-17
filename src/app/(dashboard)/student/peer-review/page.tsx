@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PeerReviewClient } from "@/components/student/PeerReviewClient";
+import { SectionTaskPeerReviewClient } from "@/components/student/SectionTaskPeerReviewClient";
 
 export const metadata: Metadata = { title: "Хамтран дүгнэх" };
 
@@ -11,7 +12,14 @@ export default async function PeerReviewPage() {
   if (!session?.user) redirect("/login");
   if (session.user.role !== "STUDENT") redirect("/student");
 
-  const [myCapstones, assignedReviews, pendingCapstones] = await Promise.all([
+  const [
+    myCapstones,
+    assignedReviews,
+    pendingCapstones,
+    mySectionTasks,
+    assignedSectionTaskReviews,
+    pendingSectionTasks,
+  ] = await Promise.all([
     // My submitted capstones and their review status
     db.capstone.findMany({
       where: { studentId: session.user.id },
@@ -56,14 +64,64 @@ export default async function PeerReviewPage() {
       },
       take: 10,
     }),
+
+    db.courseSectionTaskSubmission.findMany({
+      where: { studentId: session.user.id },
+      include: {
+        course: { select: { title: true } },
+        section: { select: { title: true, order: true } },
+        reviews: { select: { id: true, isCompleted: true, score: true } },
+      },
+      orderBy: { submittedAt: "desc" },
+      take: 20,
+    }),
+
+    db.courseSectionTaskReview.findMany({
+      where: { reviewerId: session.user.id, isCompleted: false },
+      include: {
+        submission: {
+          include: {
+            student: { select: { name: true, avatarUrl: true } },
+            course: { select: { title: true } },
+            section: { select: { title: true, order: true } },
+            reviews: { select: { id: true, isCompleted: true, score: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+
+    db.courseSectionTaskSubmission.findMany({
+      where: {
+        studentId: { not: session.user.id },
+        status: { in: ["SUBMITTED", "UNDER_REVIEW"] },
+        reviews: { none: { reviewerId: session.user.id } },
+        course: { enrollments: { some: { studentId: session.user.id, status: "ACTIVE" } } },
+      },
+      include: {
+        student: { select: { name: true, avatarUrl: true } },
+        course: { select: { title: true } },
+        section: { select: { title: true, order: true } },
+        reviews: { select: { id: true, isCompleted: true, score: true } },
+      },
+      orderBy: { submittedAt: "asc" },
+      take: 10,
+    }),
   ]);
 
   return (
-    <PeerReviewClient
-      currentUserId={session.user.id}
-      myCapstones={myCapstones}
-      assignedReviews={assignedReviews}
-      pendingCapstones={pendingCapstones}
-    />
+    <div className="space-y-6">
+      <SectionTaskPeerReviewClient
+        myTasks={mySectionTasks}
+        assignedReviews={assignedSectionTaskReviews}
+        pendingTasks={pendingSectionTasks}
+      />
+      <PeerReviewClient
+        currentUserId={session.user.id}
+        myCapstones={myCapstones}
+        assignedReviews={assignedReviews}
+        pendingCapstones={pendingCapstones}
+      />
+    </div>
   );
 }

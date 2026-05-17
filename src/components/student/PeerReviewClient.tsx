@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Star, FileText, Award, Clock, CheckCircle2, XCircle, Send, Users, BookOpen, AlertCircle } from "lucide-react";
+import { Star, FileText, Award, Clock, CheckCircle2, Send, Users, BookOpen, AlertCircle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/index";
 import { getInitials, cn } from "@/lib/utils";
 import { submitPeerReview } from "@/modules/capstones/application/actions";
@@ -190,7 +190,7 @@ function ReviewModal({ capstone, onClose }: {
   );
 }
 
-export function PeerReviewClient({ currentUserId, myCapstones, assignedReviews, pendingCapstones }: Props) {
+export function PeerReviewClient({ myCapstones, assignedReviews, pendingCapstones }: Props) {
   const [tab, setTab] = useState<Tab>("mine");
   const [activeReview, setActiveReview] = useState<AssignedReview | null>(null);
 

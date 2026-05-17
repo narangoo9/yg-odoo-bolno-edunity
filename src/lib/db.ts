@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { env } from "@/lib/env";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -27,9 +28,9 @@ function isNeonPooledUrl(url: string | undefined): boolean {
 }
 
 function shouldUsePgAdapter(): boolean {
-  if (process.env.PRISMA_USE_PG_ADAPTER === "true") return true;
-  if (process.env.PRISMA_USE_PG_ADAPTER === "false") return false;
-  return isNeonPooledUrl(process.env.DATABASE_URL);
+  if (env.prismaUsePgAdapter === "true") return true;
+  if (env.prismaUsePgAdapter === "false") return false;
+  return isNeonPooledUrl(env.databaseUrl);
 }
 
 function isTransientConnectionError(error: unknown): boolean {
@@ -56,15 +57,15 @@ function createPrismaClient(): PrismaClient {
     const pool =
       globalForPrisma.prismaPool ??
       new Pool({
-        connectionString: process.env.DATABASE_URL,
-        max: process.env.NODE_ENV === "production" ? 10 : 5,
+        connectionString: env.databaseUrl,
+        max: env.isProduction ? 10 : 5,
         idleTimeoutMillis: 20_000,
         connectionTimeoutMillis: 15_000,
         allowExitOnIdle: true,
       });
 
     pool.on("error", (err) => {
-      if (process.env.NODE_ENV === "development") {
+      if (env.nodeEnv === "development") {
         console.warn("[db] pg pool connection error (will retry on next query):", err.message);
       }
     });
@@ -74,11 +75,11 @@ function createPrismaClient(): PrismaClient {
     const adapter = new PrismaPg(pool);
     base = new PrismaClient({
       adapter,
-      log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+      log: env.nodeEnv === "development" ? ["warn", "error"] : ["error"],
     });
   } else {
     base = new PrismaClient({
-      log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+      log: env.nodeEnv === "development" ? ["warn", "error"] : ["error"],
     });
   }
 
@@ -113,6 +114,6 @@ function createPrismaClient(): PrismaClient {
 
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") {
+if (!env.isProduction) {
   globalForPrisma.prisma = db;
 }

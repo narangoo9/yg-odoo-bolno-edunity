@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
-  Globe, CreditCard, Bell, Shield, Palette, Database,
+  Globe, CreditCard, Bell,
   CheckCircle, AlertTriangle,
 } from "lucide-react";
 

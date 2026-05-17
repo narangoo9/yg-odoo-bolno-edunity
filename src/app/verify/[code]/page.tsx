@@ -52,7 +52,7 @@ export default async function VerifyCertificatePage({ params }: Props) {
           <p className="text-white font-bold text-lg">{cert.student.name}</p>
           <p className="text-muted-foreground text-xs mt-1">амжилттай дүүргэсэн</p>
           <p className="text-white font-semibold mt-1 text-sm">
-            "{cert.course?.title ?? (cert.metadata as Record<string, string> | null)?.programTitle ?? "Сургалтын программ"}"
+            &quot;{cert.course?.title ?? (cert.metadata as Record<string, string> | null)?.programTitle ?? "Сургалтын программ"}&quot;
           </p>
         </div>
 

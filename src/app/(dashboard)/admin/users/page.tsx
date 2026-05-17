@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/index";
 import { formatDate } from "@/lib/utils";
-import { Users, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { DeleteUserButton } from "@/components/admin/DeleteUserButton";
 
 export const metadata: Metadata = { title: "Хэрэглэгчид" };

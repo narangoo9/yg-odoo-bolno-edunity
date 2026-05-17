@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import type { Attachment } from "nodemailer/lib/mailer";
+import { env } from "@/lib/env";
 
 interface SendEmailOptions {
   to: string;
@@ -10,12 +11,12 @@ interface SendEmailOptions {
 }
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT ?? 587),
+  host: env.smtpHost,
+  port: env.smtpPort,
   secure: false,
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD,
+    user: env.smtpUser,
+    pass: env.smtpPass,
   },
 });
 
@@ -123,7 +124,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
   const { html, text } = template(options.data);
 
   await transporter.sendMail({
-    from: `"${process.env.NEXT_PUBLIC_APP_NAME ?? "ELearn"}" <${process.env.EMAIL_FROM}>`,
+    from: env.smtpFrom ?? `"${env.appName}" <noreply@example.com>`,
     to: options.to,
     subject: options.subject,
     html,

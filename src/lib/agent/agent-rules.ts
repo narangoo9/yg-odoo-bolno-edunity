@@ -1,6 +1,6 @@
 import type { AgentContext, AgentIntent, AgentResponse } from "./agent-types";
 import { detectAgentIntent } from "./agent-intent";
-import { ACTION, messageAction, navigateAction } from "./agent-actions";
+import { ACTION, navigateAction } from "./agent-actions";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

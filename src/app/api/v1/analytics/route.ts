@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import {
   getAdminOverview,
@@ -9,7 +8,7 @@ import {
 } from "@/modules/analytics/infrastructure/queries";
 import { ok, unauthorized, forbidden, serverError } from "@/shared/utils/api-response";
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
     if (!session?.user) return unauthorized();

@@ -11,7 +11,7 @@ interface Props {
   currency: string;
 }
 
-export function CheckoutButton({ courseId, courseTitle, price, currency }: Props) {
+export function CheckoutButton({ courseId }: Props) {
   const [loading, setLoading] = useState(false);
 
   const handleCheckout = async () => {

@@ -1,8 +1,12 @@
 import IORedis from "ioredis";
+import { env } from "@/lib/env";
 
-const redisUrl = process.env.REDIS_URL;
+const redisUrl = env.redisUrl;
 
-const globalForRedis = globalThis as unknown as { redis?: IORedis | null };
+const globalForRedis = globalThis as unknown as {
+  redis?: IORedis | null;
+  rateLimitMemory?: Map<string, number[]>;
+};
 
 export const redis =
   globalForRedis.redis ??
@@ -17,7 +21,62 @@ export const redis =
       })
     : null);
 
-if (process.env.NODE_ENV !== "production") globalForRedis.redis = redis;
+if (!env.isProduction) globalForRedis.redis = redis;
+
+export const RATE_LIMIT_UNAVAILABLE_MESSAGE =
+  "Service temporarily unavailable. Please try again later.";
+
+export type RateLimitResult = {
+  success: boolean;
+  remaining: number;
+  resetAt: Date;
+  unavailable?: boolean;
+};
+
+const memoryRateLimitStore =
+  globalForRedis.rateLimitMemory ?? new Map<string, number[]>();
+
+if (!env.isProduction) {
+  globalForRedis.rateLimitMemory = memoryRateLimitStore;
+}
+
+function memoryRateLimit(
+  key: string,
+  limit: number,
+  windowSeconds: number
+): RateLimitResult {
+  const now = Date.now();
+  const windowStart = now - windowSeconds * 1000;
+  const hits = (memoryRateLimitStore.get(key) ?? []).filter((hit) => hit > windowStart);
+
+  if (hits.length >= limit) {
+    const oldestHit = hits[0] ?? now;
+    memoryRateLimitStore.set(key, hits);
+    return {
+      success: false,
+      remaining: 0,
+      resetAt: new Date(oldestHit + windowSeconds * 1000),
+    };
+  }
+
+  hits.push(now);
+  memoryRateLimitStore.set(key, hits);
+
+  return {
+    success: true,
+    remaining: limit - hits.length,
+    resetAt: new Date(now + windowSeconds * 1000),
+  };
+}
+
+function unavailableRateLimit(windowSeconds: number): RateLimitResult {
+  return {
+    success: false,
+    remaining: 0,
+    resetAt: new Date(Date.now() + windowSeconds * 1000),
+    unavailable: true,
+  };
+}
 
 /**
  * Generic cache wrapper.
@@ -78,16 +137,24 @@ export async function rateLimit(
   limit: number,
   windowSeconds: number,
   strategy: "fail-open" | "fail-closed" = "fail-open"
-): Promise<{ success: boolean; remaining: number; resetAt: Date }> {
+): Promise<RateLimitResult> {
   const key = `ratelimit:${identifier}`;
   const now = Date.now();
   const windowStart = now - windowSeconds * 1000;
 
   if (!redis) {
-    const isClosed = strategy === "fail-closed";
+    if (strategy === "fail-closed" && env.isProduction) {
+      return unavailableRateLimit(windowSeconds);
+    }
+
+    if (!env.isProduction) {
+      console.warn("[rate-limit] Redis is unavailable; using in-memory development limiter.");
+      return memoryRateLimit(key, limit, windowSeconds);
+    }
+
     return {
-      success: !isClosed,
-      remaining: isClosed ? 0 : limit,
+      success: true,
+      remaining: limit,
       resetAt: new Date(now + windowSeconds * 1000),
     };
   }
@@ -112,12 +179,29 @@ export async function rateLimit(
       remaining: limit - count - 1,
       resetAt: new Date(now + windowSeconds * 1000),
     };
-  } catch {
-    const isClosed = strategy === "fail-closed";
+  } catch (error) {
+    console.error("[rate-limit] Redis error:", error);
+
+    if (strategy === "fail-closed" && env.isProduction) {
+      return unavailableRateLimit(windowSeconds);
+    }
+
+    if (!env.isProduction) {
+      return memoryRateLimit(key, limit, windowSeconds);
+    }
+
     return {
-      success: !isClosed,
-      remaining: isClosed ? 0 : limit,
+      success: true,
+      remaining: limit,
       resetAt: new Date(now + windowSeconds * 1000),
     };
   }
+}
+
+export async function sensitiveRateLimit(
+  identifier: string,
+  limit: number,
+  windowSeconds: number
+): Promise<RateLimitResult> {
+  return rateLimit(identifier, limit, windowSeconds, "fail-closed");
 }

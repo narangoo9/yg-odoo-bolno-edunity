@@ -41,7 +41,7 @@ export async function convertXpToCredits(xpToSpend: number) {
   const newBalance = new Decimal(user.walletBalance.toString()).plus(actualCredits);
   const newXpCreditsEarned = new Decimal(user.xpCreditsEarned.toString()).plus(actualCredits);
 
-  const result = await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     const conversion = await tx.xpConversion.create({
       data: {
         userId: session.user.id,

@@ -305,7 +305,7 @@ function StickerBar({ onSelect }: { onSelect: (s: typeof ROBO_STICKERS[number]) 
 }
 
 // ── RECOMMENDATION BANNER ──────────────────────────────────────────────────────
-function RecommendationBanner() {
+export function RecommendationBanner() {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-r from-background via-card to-accent/40 dark:from-card dark:via-card dark:to-violet-900/10 p-4 shrink-0">
       <div className="flex items-center gap-4">

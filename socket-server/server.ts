@@ -21,12 +21,48 @@ type LessonAccess = {
   companyId: string | null;
 };
 
+function readEnv(name: string) {
+  const value = process.env[name]?.trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
+function parseAllowedOrigins(value: string | undefined, fallbackOrigin: string) {
+  const origins = (value ?? fallbackOrigin)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return origins.length > 0 ? origins : [fallbackOrigin];
+}
+
+const nodeEnv = process.env.NODE_ENV ?? "development";
+const configuredAppUrl = readEnv("NEXT_PUBLIC_APP_URL");
+const appUrl = configuredAppUrl ?? "http://localhost:3000";
+const allowedOrigins = parseAllowedOrigins(readEnv("SOCKET_ALLOWED_ORIGINS"), appUrl);
+const port = Number(readEnv("SOCKET_PORT") ?? readEnv("PORT") ?? 3001);
+const databaseUrl = readEnv("DATABASE_URL");
+const redisUrl = readEnv("REDIS_URL");
+const authSecret = readEnv("AUTH_SECRET") ?? readEnv("NEXTAUTH_SECRET");
+const missingProductionEnv = [
+  databaseUrl ? null : "DATABASE_URL",
+  authSecret ? null : "AUTH_SECRET or NEXTAUTH_SECRET",
+  configuredAppUrl ? null : "NEXT_PUBLIC_APP_URL",
+].filter((value): value is string => Boolean(value));
+
+if (nodeEnv === "production" && missingProductionEnv.length > 0) {
+  throw new Error(
+    `[socket] Missing required production environment variables: ${missingProductionEnv.join(", ")}`
+  );
+}
+
+if (!databaseUrl && nodeEnv !== "production") {
+  console.warn("[socket] DATABASE_URL is missing. Database-backed chat events will fail until configured.");
+}
+
 const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  log: nodeEnv === "development" ? ["warn", "error"] : ["error"],
 });
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-const port = Number(process.env.SOCKET_PORT ?? process.env.PORT ?? 4000);
 const roomUsers = new Map<string, Set<string>>();
 const userLastMessage = new Map<string, number>();
 
@@ -47,13 +83,8 @@ const typingSchema = z.object({
 });
 
 function socketSecret() {
-  const secret = process.env.SOCKET_AUTH_SECRET ?? process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
-
-  if (!secret) {
-    throw new Error("SOCKET_AUTH_SECRET, AUTH_SECRET, or NEXTAUTH_SECRET must be configured");
-  }
-
-  return new TextEncoder().encode(secret);
+  if (!authSecret) throw new Error("AUTH_SECRET or NEXTAUTH_SECRET must be configured");
+  return new TextEncoder().encode(authSecret);
 }
 
 function lessonRoom(lessonId: string) {
@@ -66,9 +97,9 @@ function sendHealth(_req: IncomingMessage, res: ServerResponse) {
 }
 
 async function configureRedisAdapter(io: Server) {
-  if (!process.env.REDIS_URL) return;
+  if (!redisUrl) return;
 
-  const pubClient = new Redis(process.env.REDIS_URL);
+  const pubClient = new Redis(redisUrl);
   const subClient = pubClient.duplicate();
 
   pubClient.on("error", (error) => console.error("Redis pub error", error));
@@ -179,7 +210,7 @@ function removeOnlineUser(room: string, userId: string) {
 const httpServer = createServer(sendHealth);
 const io = new Server(httpServer, {
   cors: {
-    origin: appUrl.split(",").map((origin) => origin.trim()),
+    origin: allowedOrigins,
     credentials: true,
   },
 });
@@ -349,6 +380,7 @@ configureRedisAdapter(io)
   .then(() => {
     httpServer.listen(port, () => {
       console.log(`EduNity Socket.IO server running on port ${port}`);
+      console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
     });
   })
   .catch((error) => {

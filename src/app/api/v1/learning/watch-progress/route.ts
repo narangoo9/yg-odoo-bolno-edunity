@@ -13,6 +13,7 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // Private endpoint: enrolled students can update watch progress only for sections in that course.
   try {
     const session = await auth();
     if (!session?.user?.id) return unauthorized();
@@ -28,6 +29,12 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     if (!enrollment) return forbidden("Бүртгэл олдсонгүй");
+
+    const section = await db.courseSection.findFirst({
+      where: { id: sectionId, courseId },
+      select: { id: true },
+    });
+    if (!section) return badRequest("Section not found");
 
     await updateSectionWatchProgress(
       session.user.id,

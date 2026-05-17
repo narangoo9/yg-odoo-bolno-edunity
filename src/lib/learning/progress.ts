@@ -7,6 +7,19 @@ export type TaskState = "not-started" | "draft" | "submitted" | "completed";
 export interface CourseLearningState {
   completedSectionIds: string[];
   taskStates: Record<string, TaskState>;
+  taskSubmissions: Record<string, {
+    id: string;
+    status: string;
+    score: number | null;
+    submittedAt: string;
+    reviewCount: number;
+    completedReviewCount: number;
+  }>;
+  certificate: {
+    id: string;
+    certificateNo: string;
+    verificationCode: string;
+  } | null;
   watchProgress: Record<string, { lastPositionSec: number; watchTimeSec: number }>;
   notes: Array<{
     id: string;
@@ -22,7 +35,7 @@ export async function getCourseLearningState(
   userId: string,
   courseId: string,
 ): Promise<CourseLearningState> {
-  const [completions, taskStates, watchProgress, notes] = await Promise.all([
+  const [completions, taskStates, taskSubmissions, certificate, watchProgress, notes] = await Promise.all([
     db.course_section_completions.findMany({
       where: { studentId: userId, course_sections: { courseId } },
       select: { sectionId: true },
@@ -30,6 +43,21 @@ export async function getCourseLearningState(
     db.course_section_task_states.findMany({
       where: { userId, courseId },
       select: { sectionId: true, state: true },
+    }),
+    db.courseSectionTaskSubmission.findMany({
+      where: { studentId: userId, courseId },
+      select: {
+        id: true,
+        sectionId: true,
+        status: true,
+        score: true,
+        submittedAt: true,
+        reviews: { select: { isCompleted: true } },
+      },
+    }),
+    db.certificate.findFirst({
+      where: { studentId: userId, courseId },
+      select: { id: true, certificateNo: true, verificationCode: true },
     }),
     db.course_section_watch_progress.findMany({
       where: { userId, courseId },
@@ -47,6 +75,20 @@ export async function getCourseLearningState(
     taskStates: Object.fromEntries(
       taskStates.map((t) => [t.sectionId, t.state as TaskState]),
     ),
+    taskSubmissions: Object.fromEntries(
+      taskSubmissions.map((submission) => [
+        submission.sectionId,
+        {
+          id: submission.id,
+          status: submission.status,
+          score: submission.score,
+          submittedAt: submission.submittedAt.toISOString(),
+          reviewCount: submission.reviews.length,
+          completedReviewCount: submission.reviews.filter((review) => review.isCompleted).length,
+        },
+      ]),
+    ),
+    certificate,
     watchProgress: Object.fromEntries(
       watchProgress.map((w) => [
         w.sectionId,
@@ -72,7 +114,7 @@ export async function completeCourseSectionInDB(
   // Check existing state to detect if this is the first completion
   const existing = await db.course_section_task_states.findUnique({
     where: { userId_sectionId: { userId, sectionId } },
-    select: { completedAt: true, xpAwarded: true },
+    select: { state: true, completedAt: true, xpAwarded: true },
   });
 
   const alreadyCompleted = existing?.completedAt !== null && existing?.completedAt !== undefined;
@@ -84,11 +126,15 @@ export async function completeCourseSectionInDB(
     update: { completedAt: new Date() },
   });
 
-  // Upsert task state to completed
+  // Video completion unlocks the section task. The task itself is completed
+  // only after peer review grades the submission.
   await db.course_section_task_states.upsert({
     where: { userId_sectionId: { userId, sectionId } },
-    create: { userId, courseId, sectionId, state: "completed", completedAt: new Date() },
-    update: { state: "completed", completedAt: new Date() },
+    create: { userId, courseId, sectionId, state: "draft" },
+    update:
+      existing?.state === "submitted" || existing?.state === "completed"
+        ? { state: existing.state }
+        : { state: "draft" },
   });
 
   let xpAwarded = 0;

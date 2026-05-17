@@ -5,6 +5,7 @@ import { ok, notFound, serverError } from "@/shared/utils/api-response";
 interface Params { params: Promise<{ code: string }> }
 
 export async function GET(_req: NextRequest, { params }: Params) {
+  // Public endpoint: certificate verification must be accessible by certificate code.
   try {
     const { code } = await params;
     const cert = await verifyCertificate(code);

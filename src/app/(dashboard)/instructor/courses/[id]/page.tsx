@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Eye, Settings, Share2 } from "lucide-react";
+import { ChevronLeft, Eye } from "lucide-react";
 import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/index";
 import { CourseEditor } from "@/components/course/CourseEditor";

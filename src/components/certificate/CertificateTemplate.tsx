@@ -63,7 +63,7 @@ function CornerOrnament({ flip }: { flip?: boolean }) {
   );
 }
 
-function CornerOrnamentBottom({ flip }: { flip?: boolean }) {
+export function CornerOrnamentBottom({ flip }: { flip?: boolean }) {
   return (
     <svg
       width="90"
@@ -1102,7 +1102,7 @@ export function CertificateTemplate({
                     margin: 0,
                   }}
                 >
-                  Building skills. Building futures.
+                  Verify at {verificationUrl}
                 </p>
               </div>
             </div>

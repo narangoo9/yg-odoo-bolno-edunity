@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, MessageSquare, ThumbsUp, Edit2 } from "lucide-react";
+import { Star, MessageSquare, Edit2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/index";
 import { getInitials, cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";

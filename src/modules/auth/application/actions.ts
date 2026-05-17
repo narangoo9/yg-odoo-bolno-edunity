@@ -3,7 +3,9 @@
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { getAppUrl } from "@/lib/app-url";
+import { RATE_LIMIT_UNAVAILABLE_MESSAGE, sensitiveRateLimit } from "@/lib/cache";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { signOut } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
 import { awardXP, XP_REWARDS } from "@/modules/gamification/application/gamification-service";
@@ -152,10 +154,15 @@ export async function forgotPassword(input: ForgotPasswordInput) {
   const parsed = forgotPasswordSchema.safeParse(input);
   if (!parsed.success) return { error: "Буруу оролт" };
 
+  const email = parsed.data.email.trim().toLowerCase();
+  const rl = await sensitiveRateLimit(`auth:forgot-password:${email}`, 3, 600);
+  if (rl.unavailable) return { error: RATE_LIMIT_UNAVAILABLE_MESSAGE };
+  if (!rl.success) return { error: "Too many password reset requests. Please try again later." };
+
   const user = await db.user.findFirst({
     where: {
       email: {
-        equals: parsed.data.email,
+        equals: email,
         mode: "insensitive",
       },
     },
@@ -175,7 +182,7 @@ export async function forgotPassword(input: ForgotPasswordInput) {
   });
 
   await sendEmail({
-    to: parsed.data.email,
+    to: email,
     subject: "Нууц үг сэргээх",
     template: "reset-password",
     data: {
@@ -192,6 +199,14 @@ export async function forgotPassword(input: ForgotPasswordInput) {
 export async function resetPassword(input: ResetPasswordInput) {
   const parsed = resetPasswordSchema.safeParse(input);
   if (!parsed.success) return { error: "Буруу оролт" };
+
+  const rl = await sensitiveRateLimit(
+    `auth:reset-password:${parsed.data.token.slice(0, 16)}`,
+    5,
+    600
+  );
+  if (rl.unavailable) return { error: RATE_LIMIT_UNAVAILABLE_MESSAGE };
+  if (!rl.success) return { error: "Too many password reset attempts. Please try again later." };
 
   const record = await db.verificationToken.findUnique({
     where: { token: parsed.data.token },
@@ -346,7 +361,7 @@ export async function resendVerificationEmail(userId: string) {
   });
 
   const verifyUrl = `${appUrl}/verify-email?token=${token}`;
-  if (process.env.NODE_ENV !== "production") {
+  if (!env.isProduction) {
     console.log(`[DEV] Resend verification link for ${user.email}: ${verifyUrl}`);
   }
 

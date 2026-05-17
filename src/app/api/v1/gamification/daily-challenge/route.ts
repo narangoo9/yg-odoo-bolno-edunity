@@ -11,7 +11,7 @@ import { XpAction } from "@prisma/client";
 import { z } from "zod";
 
 // ── GET: өнөөдрийн challenge + өөрийн completion status ─────────────
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
     if (!session?.user) return unauthorized();

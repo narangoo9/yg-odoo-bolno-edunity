@@ -286,7 +286,7 @@ export async function createModule(input: CreateModuleInput) {
     orderBy: { orderIndex: "desc" },
   });
 
-  const module = await db.courseModule.create({
+  const courseModule = await db.courseModule.create({
     data: {
       ...parsed.data,
       orderIndex: (lastModule?.orderIndex ?? -1) + 1,
@@ -294,29 +294,29 @@ export async function createModule(input: CreateModuleInput) {
   });
 
   revalidatePath(`/instructor/courses/${parsed.data.courseId}`);
-  return { success: true, data: module };
+  return { success: true, data: courseModule };
 }
 
 export async function deleteModule(id: string) {
   const session = await auth();
   if (!session?.user) throw new Error("Нэвтрэх шаардлагатай");
 
-  const module = await db.courseModule.findUnique({
+  const courseModule = await db.courseModule.findUnique({
     where: { id },
     include: { course: true },
   });
 
   const canEdit =
-    module &&
-    (module.course.instructorId === session.user.id ||
+    courseModule &&
+    (courseModule.course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
       (session.user.role === "ORG_ADMIN" &&
-        module.course.organizationId === session.user.organizationId));
+        courseModule.course.organizationId === session.user.organizationId));
   if (!canEdit) return { error: "Эрхгүй" };
 
   await db.courseModule.delete({ where: { id } });
 
-  revalidatePath(`/instructor/courses/${module.courseId}`);
+  revalidatePath(`/instructor/courses/${courseModule.courseId}`);
   return { success: true };
 }
 
@@ -329,17 +329,17 @@ export async function createLesson(input: CreateLessonInput) {
   const parsed = createLessonSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
 
-  const module = await db.courseModule.findUnique({
+  const courseModule = await db.courseModule.findUnique({
     where: { id: parsed.data.moduleId },
     include: { course: true },
   });
 
   const canEditLesson =
-    module &&
-    (module.course.instructorId === session.user.id ||
+    courseModule &&
+    (courseModule.course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
       (session.user.role === "ORG_ADMIN" &&
-        module.course.organizationId === session.user.organizationId));
+        courseModule.course.organizationId === session.user.organizationId));
   if (!canEditLesson) return { error: "Эрхгүй" };
 
   const lastLesson = await db.lesson.findFirst({
@@ -359,7 +359,7 @@ export async function createLesson(input: CreateLessonInput) {
     },
   });
 
-  revalidatePath(`/instructor/courses/${module.courseId}/lessons`);
+  revalidatePath(`/instructor/courses/${courseModule.courseId}/lessons`);
   return { success: true, data: lesson };
 }
 

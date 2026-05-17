@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function GET() {
+  // Public-tolerant endpoint: anonymous callers get an empty list; authenticated callers see only their own saved courses.
   const session = await auth();
   if (!session?.user) return NextResponse.json({ courses: [] });
 

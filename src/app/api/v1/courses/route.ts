@@ -6,6 +6,7 @@ import { ok, created, unauthorized, forbidden, badRequest, serverError } from "@
 import type { CourseLevel } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
+  // Public endpoint: published course catalog search.
   try {
     const { searchParams } = new URL(req.url);
 
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Private endpoint: course creation is limited to instructor/admin roles.
   try {
     const session = await auth();
     if (!session?.user) return unauthorized();

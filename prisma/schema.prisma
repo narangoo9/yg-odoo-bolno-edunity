@@ -297,6 +297,8 @@ model User {
   comments                   Comment[]
   capstones                  Capstone[]
   capstoneReviews            CapstoneReview[]
+  sectionTaskSubmissions     CourseSectionTaskSubmission[]
+  sectionTaskReviews         CourseSectionTaskReview[]
   // Phase 3: orders
   orders                     Order[]
   // Phase 4: engagement
@@ -478,6 +480,7 @@ model Course {
   category           Category?           @relation(fields: [categoryId], references: [id])
   modules            CourseModule[]
   sections           CourseSection[]
+  sectionTaskSubmissions CourseSectionTaskSubmission[]
   enrollments        Enrollment[]
   quizzes            Quiz[]
   certificates       Certificate[]
@@ -509,6 +512,7 @@ model CourseSection {
   sectionCompletions   course_section_completions[]
   sectionTaskStates    course_section_task_states[]
   sectionWatchProgress course_section_watch_progress[]
+  taskSubmissions      CourseSectionTaskSubmission[]
 
   @@unique([courseId, order])
   @@unique([courseId, startSeconds])
@@ -1246,6 +1250,55 @@ model CapstoneReview {
 
   @@unique([capstoneId, reviewerId])
   @@map("capstone_reviews")
+}
+
+// Peer-reviewed task submission for a YouTube timestamp section.
+model CourseSectionTaskSubmission {
+  id            String    @id @default(cuid())
+  courseId      String
+  sectionId     String
+  studentId     String
+  title         String
+  content       String    @db.Text
+  submissionUrl String?
+  status        String    @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | GRADED | REJECTED
+  score         Float?
+  feedback      String?   @db.Text
+  submittedAt   DateTime  @default(now())
+  gradedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  course  Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  section CourseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  student User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reviews CourseSectionTaskReview[]
+
+  @@unique([studentId, sectionId])
+  @@index([courseId, status])
+  @@index([studentId, courseId])
+  @@index([sectionId])
+  @@map("course_section_task_submissions")
+}
+
+// Peer review for a submitted YouTube section task.
+model CourseSectionTaskReview {
+  id           String   @id @default(cuid())
+  submissionId String
+  reviewerId   String
+  score        Float?
+  feedback     String?  @db.Text
+  rubricScores Json?
+  isCompleted  Boolean  @default(false)
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  submission CourseSectionTaskSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewer   User                        @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, reviewerId])
+  @@index([reviewerId, isCompleted])
+  @@map("course_section_task_reviews")
 }
 
 // Threaded comments on lessons, courses, programs, capstones

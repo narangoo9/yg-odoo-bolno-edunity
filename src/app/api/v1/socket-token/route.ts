@@ -1,12 +1,13 @@
 import { SignJWT } from "jose";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { env } from "@/lib/env";
 
 function getSocketSecret() {
-  const secret = process.env.SOCKET_AUTH_SECRET ?? process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  const secret = env.authSecret;
 
   if (!secret) {
-    throw new Error("SOCKET_AUTH_SECRET, AUTH_SECRET, or NEXTAUTH_SECRET must be configured");
+    throw new Error("AUTH_SECRET or NEXTAUTH_SECRET must be configured");
   }
 
   return new TextEncoder().encode(secret);

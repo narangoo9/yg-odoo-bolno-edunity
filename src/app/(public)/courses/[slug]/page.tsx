@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import {
   BookOpen, Clock, Award, Play, Lock, BarChart3, ArrowRight, Crown,
 } from "lucide-react";

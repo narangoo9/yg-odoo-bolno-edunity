@@ -9,16 +9,13 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { applyTokenToSession, applyUserToToken, authConfig, type AuthUserLike } from "@/lib/auth/config";
 import { loginSchema } from "@/modules/auth/domain/schemas";
 
-const authSecret =
-  (process.env.AUTH_SECRET?.trim() || undefined) ??
-  (process.env.NEXTAUTH_SECRET?.trim() || undefined) ??
-  (process.env.NODE_ENV === "development" ? "elearn-dev-auth-secret-not-for-production" : undefined);
-
-const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+const authSecret = env.authSecret;
+const googleClientId = env.googleClientId;
+const googleClientSecret = env.googleClientSecret;
 const googleEnabled = Boolean(googleClientId && googleClientSecret);
 
 // Loud server-side diagnostic so missing/empty env vars are obvious in the dev log.
@@ -33,7 +30,7 @@ if (!googleEnabled) {
     {
       hasClientId: Boolean(googleClientId),
       hasClientSecret: Boolean(googleClientSecret),
-      nodeEnv: process.env.NODE_ENV,
+      nodeEnv: env.nodeEnv,
     },
   );
 }
@@ -43,18 +40,23 @@ export const authDiagnostics = {
   googleEnabled,
   hasGoogleClientId: Boolean(googleClientId),
   hasGoogleClientSecret: Boolean(googleClientSecret),
-  nextAuthUrl: process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? null,
-  nodeEnv: process.env.NODE_ENV ?? null,
+  nextAuthUrl: env.nextAuthUrl,
+  nodeEnv: env.nodeEnv,
 };
 
 const providers: Provider[] = [];
+
+function isGoogleEmailVerified(profile: unknown) {
+  if (!profile || typeof profile !== "object") return false;
+  const value = (profile as Record<string, unknown>).email_verified;
+  return value === true || value === "true";
+}
 
 if (googleEnabled) {
   providers.push(
     Google({
       clientId: googleClientId!,
       clientSecret: googleClientSecret!,
-      allowDangerousEmailAccountLinking: true,
     }),
   );
 }
@@ -137,8 +139,10 @@ const nextAuthResult = NextAuth({
   },
   callbacks: {
     ...authConfig.callbacks,
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       if (account?.provider !== "google" || !user?.email) return true;
+      if (!isGoogleEmailVerified(profile)) return false;
+
       const existing = await db.user.findFirst({
         where: { email: user.email.trim().toLowerCase() },
         select: { id: true, status: true },
@@ -235,8 +239,8 @@ async function getServerSessionFromToken(): Promise<Session | null> {
     secret,
     secureCookie:
       headers.get("x-forwarded-proto") === "https" ||
-      process.env.NEXTAUTH_URL?.startsWith("https://") === true ||
-      process.env.AUTH_URL?.startsWith("https://") === true,
+      env.nextAuthUrl.startsWith("https://") ||
+      env.appUrl.startsWith("https://"),
   });
 
   if (!token) {

@@ -19,7 +19,6 @@ export function XpConvertForm({ maxXp, remainingCap }: Props) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const maxCreditsFromXp = maxXp / XP_PER_CREDIT;
   const creditsPreview = Math.min(xpAmount / XP_PER_CREDIT, remainingCap);
 
   const handleConvert = async () => {

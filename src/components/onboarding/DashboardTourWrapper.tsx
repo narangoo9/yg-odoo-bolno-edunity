@@ -7,7 +7,7 @@ import { DashboardTour } from "./DashboardTour";
 import { useOnboardingStore } from "@/lib/onboarding/onboardingStore";
 
 export function DashboardTourWrapper() {
-  const { dashboardTourCompleted, onboardingCompleted } = useOnboardingStore();
+  const { dashboardTourCompleted } = useOnboardingStore();
   const [showTour, setShowTour] = useState(false);
   const [mounted, setMounted] = useState(false);
 

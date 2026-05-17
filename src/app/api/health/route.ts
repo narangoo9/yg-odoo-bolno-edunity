@@ -4,6 +4,7 @@ import { redis } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
+// Public endpoint: used by deploy health checks and external uptime monitoring.
 export async function GET() {
   const start = Date.now();
   const redisClient = redis;

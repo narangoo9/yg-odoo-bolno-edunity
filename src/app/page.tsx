@@ -3,10 +3,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { unstable_cache } from "next/cache";
 import {
-  BookOpen, Users, Award, BarChart3,
+  BookOpen, Users, Award,
   ArrowRight, Star, Zap, Globe,
   CheckCircle2, Target, TrendingUp, Building2,
-  GraduationCap, BadgeCheck, Rocket, ChevronRight, Quote, Brain, Play,
+  BadgeCheck, Rocket, ChevronRight, Quote, Brain, Play,
 } from "lucide-react";
 import { getCourses } from "@/modules/courses/infrastructure/queries";
 import { getAdminOverview } from "@/modules/analytics/infrastructure/queries";

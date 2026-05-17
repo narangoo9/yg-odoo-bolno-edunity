@@ -9,10 +9,23 @@ interface Params {
 }
 
 export async function GET(_req: NextRequest, { params }: Params) {
+  // Public endpoint: published course detail read; draft courses require management access.
   try {
     const { id } = await params;
     const course = await getCourseById(id);
     if (!course) return notFound("Курс олдсонгүй");
+    if (course.status !== "PUBLISHED") {
+      const session = await auth().catch(() => null);
+      const sameOrganization =
+        Boolean(course.organizationId) && course.organizationId === session?.user?.organizationId;
+      const canManage =
+        session?.user?.role === "SUPER_ADMIN" ||
+        course.instructorId === session?.user?.id ||
+        (session?.user?.role === "ORG_ADMIN" && sameOrganization);
+
+      if (!canManage) return notFound("Course not found");
+    }
+
     return ok(course);
   } catch {
     return serverError();
@@ -20,6 +33,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
+  // Private endpoint: updateCourse enforces instructor, org admin, or super admin access.
   try {
     const session = await auth();
     if (!session?.user) return unauthorized();
@@ -36,6 +50,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
+  // Private endpoint: deleteCourse enforces instructor or super admin access.
   try {
     const session = await auth();
     if (!session?.user) return unauthorized();

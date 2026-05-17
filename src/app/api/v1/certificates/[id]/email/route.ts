@@ -6,6 +6,7 @@ import { sendEmail } from "@/lib/email";
 import { generateCertificatePdf } from "@/modules/certificates/infrastructure/certificate-service";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  // Private endpoint: only the certificate owner can email their certificate.
   const { id } = await params;
   const session = await auth();
 

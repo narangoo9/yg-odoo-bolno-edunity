@@ -319,7 +319,7 @@ export function CourseEditor({ courseId, status, thumbnailUrl, modules }: Props)
             YouTube хичээлийн <code className="bg-muted px-1 rounded">endTimeSeconds=0</code> болон{" "}
             <code className="bg-muted px-1 rounded">startTimeSeconds=0</code> утгуудыг{" "}
             <code className="bg-muted px-1 rounded">null</code> болгон засна.
-            Ингэснээр "Video unavailable" алдаа арилна.
+            Ингэснээр &quot;Video unavailable&quot; алдаа арилна.
           </p>
           <Button
             onClick={handleFixZeroTimes}
@@ -753,7 +753,7 @@ function NewLessonForm({ moduleId, onClose, onCreated }: { moduleId: string; onC
   );
 }
 
-function LessonSectionCreateForm({
+export function LessonSectionCreateForm({
   lessonId,
   existingCount,
   onCreated,
@@ -878,7 +878,6 @@ function EditLessonForm({
   });
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
 
   const submit = () => {
     if (!form.title.trim()) return;
