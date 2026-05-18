@@ -45,7 +45,7 @@ export function resolveLoginErrorMessage(
   }
 
   if (errorType === "Configuration") {
-    return "Нэвтрэх үед алдаа гарлаа. Имэйл, нууц үгээ шалгаад дахин оролдоно уу.";
+    return "Google нэвтрэлтийн тохиргоо буруу байна. Vercel дээр NEXTAUTH_URL, GOOGLE_CLIENT_ID/SECRET шалгаад, Google Console-д redirect URI нэмнэ үү.";
   }
 
   return "Нэвтрэх үед алдаа гарлаа. Дахин оролдоно уу.";

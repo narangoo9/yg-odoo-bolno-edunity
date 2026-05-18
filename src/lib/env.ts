@@ -85,13 +85,28 @@ if (!parsed.success) {
 }
 
 const raw = parsed.data;
-const appUrl =
-  raw.NEXT_PUBLIC_APP_URL ??
-  raw.AUTH_URL ??
-  raw.NEXTAUTH_URL ??
-  toUrlFromVercelHost(raw.VERCEL_PROJECT_PRODUCTION_URL ?? raw.VERCEL_URL) ??
-  "http://localhost:3000";
-const nextAuthUrl = raw.NEXTAUTH_URL ?? raw.AUTH_URL ?? appUrl;
+const isProduction = raw.NODE_ENV === "production";
+const vercelUrl = toUrlFromVercelHost(raw.VERCEL_PROJECT_PRODUCTION_URL ?? raw.VERCEL_URL);
+
+function isLocalUrl(url: string | undefined) {
+  if (!url) return true;
+  return /localhost|127\.0\.0\.1/i.test(url);
+}
+
+/** Vercel production: ignore localhost URLs left in dashboard env vars. */
+function pickPublicUrl(configured: string | undefined) {
+  if (isProduction && vercelUrl && isLocalUrl(configured)) {
+    return vercelUrl;
+  }
+  return configured ?? vercelUrl ?? "http://localhost:3000";
+}
+
+const appUrl = normalizeUrl(
+  pickPublicUrl(raw.NEXT_PUBLIC_APP_URL ?? raw.AUTH_URL ?? raw.NEXTAUTH_URL),
+);
+const nextAuthUrl = normalizeUrl(
+  pickPublicUrl(raw.NEXTAUTH_URL ?? raw.AUTH_URL ?? appUrl),
+);
 const authSecret =
   raw.AUTH_SECRET ??
   raw.NEXTAUTH_SECRET ??
@@ -106,7 +121,6 @@ const missingProductionVars = [
   raw.NEXT_PUBLIC_APP_URL ? null : "NEXT_PUBLIC_APP_URL",
 ].filter((value): value is string => Boolean(value));
 
-const isProduction = raw.NODE_ENV === "production";
 const isNextBuildPhase = raw.NEXT_PHASE === "phase-production-build";
 
 if (missingProductionVars.length > 0) {
