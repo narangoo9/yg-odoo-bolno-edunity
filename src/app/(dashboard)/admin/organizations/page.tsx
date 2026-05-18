@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/index";
 import { Building2, Users, BookOpen } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { getOrgApprovalStatus } from "@/lib/organization-approval";
+import { OrgApprovalActions } from "@/components/admin/OrgApprovalActions";
 
 export const metadata: Metadata = { title: "Байгууллагууд" };
 
@@ -42,6 +44,8 @@ export default async function AdminOrganizationsPage({ searchParams }: PageProps
         slug: true,
         plan: true,
         logoUrl: true,
+        isActive: true,
+        settings: true,
         createdAt: true,
         owner: { select: { name: true, email: true } },
         _count: { select: { members: true, courses: true } },
@@ -66,6 +70,8 @@ export default async function AdminOrganizationsPage({ searchParams }: PageProps
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {orgs.map((org) => {
             const pc = planConfig[org.plan];
+            const approval = getOrgApprovalStatus(org.settings);
+            const pending = approval === "pending" || (!org.isActive && approval !== "rejected");
             return (
               <div key={org.id} className="bg-card rounded-2xl border border-border p-5 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-4">
@@ -75,7 +81,16 @@ export default async function AdminOrganizationsPage({ searchParams }: PageProps
                       : org.name[0]
                     }
                   </div>
-                  <Badge variant={pc?.variant ?? "secondary"}>{pc?.label ?? org.plan}</Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge variant={pc?.variant ?? "secondary"}>{pc?.label ?? org.plan}</Badge>
+                    {pending ? (
+                      <Badge variant="warning">Хүлээгдэж буй</Badge>
+                    ) : approval === "rejected" ? (
+                      <Badge variant="destructive">Татгалзсан</Badge>
+                    ) : (
+                      <Badge variant="success">Зөвшөөрсөн</Badge>
+                    )}
+                  </div>
                 </div>
 
                 <h3 className="font-semibold text-foreground mb-1">{org.name}</h3>
@@ -94,8 +109,10 @@ export default async function AdminOrganizationsPage({ searchParams }: PageProps
 
                 <div className="text-xs text-muted-foreground pt-3 border-t border-border">
                   <p>Эзэмшигч: <span className="text-foreground font-medium">{org.owner.name}</span></p>
+                  <p className="mt-0.5">{org.owner.email}</p>
                   <p className="mt-1">Үүсгэсэн: {formatDate(org.createdAt)}</p>
                 </div>
+                <OrgApprovalActions orgId={org.id} pending={pending} />
               </div>
             );
           })}

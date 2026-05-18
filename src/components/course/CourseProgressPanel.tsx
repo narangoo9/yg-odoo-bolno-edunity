@@ -33,6 +33,10 @@ export type CourseProgressPanelProps = {
   projectSubmitted?: boolean;
   peerReviewPassed?: boolean;
   certificateUnlocked?: boolean;
+  /** YouTube player: single slim bar only */
+  variant?: "default" | "minimal";
+  onContinueSection?: () => void;
+  activeSectionTitle?: string;
 };
 
 function formatMinutes(minutes: number) {
@@ -59,10 +63,50 @@ export function CourseProgressPanel({
   projectSubmitted,
   peerReviewPassed,
   certificateUnlocked,
+  variant = "default",
+  onContinueSection,
+  activeSectionTitle,
 }: CourseProgressPanelProps) {
   const lessonPercent =
     totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
   const displayWatch = watchPercent > 0 ? watchPercent : lessonPercent;
+
+  if (variant === "minimal") {
+    return (
+      <div className="shrink-0 border-b border-border bg-card/80 px-3 py-2 backdrop-blur-sm dark:bg-background/90">
+        <div className="flex flex-wrap items-center gap-2 gap-y-1">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-bold text-foreground">{courseTitle}</p>
+            {activeSectionTitle ? (
+              <p className="truncate text-[11px] text-muted-foreground">{activeSectionTitle}</p>
+            ) : null}
+          </div>
+          <span className="shrink-0 text-[11px] font-semibold tabular-nums text-muted-foreground">
+            {completedCount}/{totalLessons} · {displayWatch}%
+          </span>
+          {nextLesson && onContinueSection ? (
+            <button
+              type="button"
+              onClick={onContinueSection}
+              className="inline-flex max-w-[200px] items-center gap-1 truncate rounded-lg bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground hover:bg-primary/90"
+            >
+              <Play size={12} className="shrink-0 fill-current" />
+              <span className="truncate">{nextLesson.title}</span>
+            </button>
+          ) : null}
+          <span className="shrink-0 rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            🏆 {certificateReadiness}%
+          </span>
+        </div>
+        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all duration-500"
+            style={{ width: `${lessonPercent}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <motion.div

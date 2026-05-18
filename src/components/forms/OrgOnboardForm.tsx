@@ -68,7 +68,9 @@ export function OrgOnboardForm() {
       return;
     }
 
-    router.replace(`/verify-email?sent=1&email=${encodeURIComponent(data.adminEmail)}`);
+    router.replace(
+      `/org/pending?registered=1&email=${encodeURIComponent(data.adminEmail)}`,
+    );
     router.refresh();
   };
 

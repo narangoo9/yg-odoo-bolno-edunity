@@ -70,6 +70,58 @@ const templates: Record<string, (data: Record<string, unknown>) => { html: strin
     text: `${data.orgName} байгууллагын урилга: ${data.inviteUrl}`,
   }),
 
+  "org-registration-admin": (data) => ({
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
+        <h1 style="color:#1e293b;font-size:22px;margin-bottom:12px">Шинэ байгууллага бүртгүүлэв</h1>
+        <p style="color:#64748b;margin:4px 0"><strong>Байгууллага:</strong> ${data.orgName}</p>
+        <p style="color:#64748b;margin:4px 0"><strong>Slug:</strong> ${data.orgSlug}</p>
+        <p style="color:#64748b;margin:4px 0"><strong>Админ:</strong> ${data.adminName} (${data.adminEmail})</p>
+        <a href="${data.reviewUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:20px">Зөвшөөрөх хэсэг рүү орох</a>
+      </div>`,
+    text: `Шинэ байгууллага: ${data.orgName} (${data.orgSlug}). Админ: ${data.adminEmail}. ${data.reviewUrl}`,
+  }),
+
+  "org-approved": (data) => ({
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
+        <h1 style="color:#1e293b;font-size:22px;margin-bottom:8px">Байгууллага зөвшөөрөгдлөө</h1>
+        <p style="color:#64748b;margin-bottom:20px"><strong>${data.orgName}</strong> платформд нэвтрэх эрхтэй боллоо.</p>
+        <a href="${data.loginUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600">Нэвтрэх</a>
+      </div>`,
+    text: `${data.orgName} зөвшөөрөгдлөө. Нэвтрэх: ${data.loginUrl}`,
+  }),
+
+  "org-rejected": (data) => ({
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
+        <h1 style="color:#1e293b;font-size:22px;margin-bottom:8px">Бүртгэл татгалзагдлаа</h1>
+        <p style="color:#64748b"><strong>${data.orgName}</strong> байгууллагын бүртгэлийг одоогоор зөвшөөрөөгүй байна. Дэмжлэгтэй холбогдоно уу.</p>
+      </div>`,
+    text: `${data.orgName} бүртгэл татгалзагдлаа.`,
+  }),
+
+  "course-review-admin": (data) => ({
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
+        <h1 style="color:#1e293b;font-size:22px;margin-bottom:12px">Курс хяналтад ирлээ</h1>
+        <p style="color:#64748b;margin:4px 0"><strong>Курс:</strong> ${data.courseTitle}</p>
+        <p style="color:#64748b;margin:4px 0"><strong>Багш:</strong> ${data.instructorName}</p>
+        <a href="${data.reviewUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:20px">Хянах</a>
+      </div>`,
+    text: `Курс хяналтад: ${data.courseTitle}. ${data.reviewUrl}`,
+  }),
+
+  "course-approved": (data) => ({
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
+        <h1 style="color:#1e293b;font-size:22px;margin-bottom:8px">Курс нийтлэгдлээ</h1>
+        <p style="color:#64748b;margin-bottom:20px"><strong>${data.courseTitle}</strong> админаас зөвшөөрөгдөж нийтэд нээгдлээ.</p>
+        <a href="${data.courseUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600">Курс харах</a>
+      </div>`,
+    text: `"${data.courseTitle}" нийтлэгдлээ. ${data.courseUrl}`,
+  }),
+
   "support-request": (data) => ({
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">

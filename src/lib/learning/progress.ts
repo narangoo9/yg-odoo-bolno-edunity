@@ -110,14 +110,26 @@ export async function completeCourseSectionInDB(
   userId: string,
   courseId: string,
   sectionId: string,
-): Promise<{ alreadyCompleted: boolean; xpAwarded: number }> {
-  // Check existing state to detect if this is the first completion
-  const existing = await db.course_section_task_states.findUnique({
-    where: { userId_sectionId: { userId, sectionId } },
-    select: { state: true, completedAt: true, xpAwarded: true },
-  });
+): Promise<{
+  alreadyCompleted: boolean;
+  xpAwarded: number;
+  xpGain?: number;
+  xpReason?: string;
+  leveledUp?: boolean;
+  level?: number;
+}> {
+  const [existingCompletion, existing] = await Promise.all([
+    db.course_section_completions.findUnique({
+      where: { sectionId_studentId: { sectionId, studentId: userId } },
+      select: { sectionId: true },
+    }),
+    db.course_section_task_states.findUnique({
+      where: { userId_sectionId: { userId, sectionId } },
+      select: { state: true, xpAwarded: true },
+    }),
+  ]);
 
-  const alreadyCompleted = existing?.completedAt !== null && existing?.completedAt !== undefined;
+  const alreadyCompleted = Boolean(existingCompletion);
 
   // Upsert completion record
   await db.course_section_completions.upsert({
@@ -138,15 +150,22 @@ export async function completeCourseSectionInDB(
   });
 
   let xpAwarded = 0;
+  let xpGain = 0;
+  let xpReason: string | undefined;
+  let leveledUp = false;
+  let level: number | undefined;
 
-  // Award XP only on first completion
   if (!alreadyCompleted && !(existing?.xpAwarded)) {
     await db.course_section_task_states.update({
       where: { userId_sectionId: { userId, sectionId } },
       data: { xpAwarded: true },
     });
     const result = await awardXP(userId, XpAction.SECTION_COMPLETE, sectionId);
-    xpAwarded = result.xp;
+    xpAwarded = result.amount;
+    xpGain = result.amount;
+    xpReason = result.reason;
+    leveledUp = result.leveledUp;
+    level = result.level;
     await updateStreak(userId);
   }
 
@@ -164,7 +183,7 @@ export async function completeCourseSectionInDB(
     update: {},
   });
 
-  return { alreadyCompleted, xpAwarded };
+  return { alreadyCompleted, xpAwarded, xpGain, xpReason, leveledUp, level };
 }
 
 /** Upsert task state for a section without marking it complete. */

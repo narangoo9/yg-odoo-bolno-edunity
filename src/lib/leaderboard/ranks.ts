@@ -9,7 +9,7 @@ export const LEADERBOARD_USER_WHERE = {
   role: "USER" as const,
 };
 
-export function leaderboardEntriesWhere(field: LeaderboardXpField): Prisma.LeaderboardEntryWhereInput {
+export function leaderboardEntriesWhere(): Prisma.LeaderboardEntryWhereInput {
   return { user: LEADERBOARD_USER_WHERE };
 }
 

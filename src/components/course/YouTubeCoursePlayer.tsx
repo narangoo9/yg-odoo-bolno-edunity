@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Award,
   BookOpen,
@@ -114,12 +114,6 @@ function planLabel(plan: MarketplacePlan) {
   return "Standard";
 }
 
-function planUnlockHint(plan: MarketplacePlan) {
-  if (plan === "PRO") return "100% sections unlocked";
-  if (plan === "PREMIUM") return "50% sections unlocked";
-  return "Intro preview only";
-}
-
 function sectionRange(section: CourseSection) {
   return `${formatSeconds(section.startSeconds)}${section.endSeconds != null ? ` - ${formatSeconds(section.endSeconds)}` : ""}`;
 }
@@ -137,8 +131,25 @@ function sectionIndexOf(sections: CourseSection[], sectionId: string) {
   return sections.findIndex((section) => section.id === sectionId);
 }
 
+/** Stops playback at section boundary when DB endSeconds is null */
+function getEffectiveEndSeconds(section: CourseSection, sections: CourseSection[]) {
+  if (section.endSeconds != null) return section.endSeconds;
+  const index = sectionIndexOf(sections, section.id);
+  const next = index >= 0 ? sections[index + 1] : undefined;
+  if (next) return Math.max(section.startSeconds + 1, next.startSeconds - 1);
+  return section.startSeconds + 900;
+}
+
+function lockedSectionMessage(sectionIndex: number, totalSections: number) {
+  const requiredPlan = getRequiredPlanForIndex(sectionIndex, totalSections);
+  return requiredPlan === "PRO"
+    ? "Дараагийн хэсэг Pro багцад нээгдэнэ. Багцаа ахиулна уу?"
+    : "Дараагийн хэсэг түгжээтэй. Premium аваад курсын 50%-ийг үргэлжлүүлэн үзнэ үү?";
+}
+
 export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
   const storagePrefix = `edunity-course-player:${course.id}`;
   const setPersistentVideo = usePersistentVideoStore((state) => state.setVideo);
   const updatePersistentTimestamp = usePersistentVideoStore((state) => state.updateTimestamp);
@@ -204,6 +215,12 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   const watchDeltaRef = useRef(0);
   const prevProgressSecondsRef = useRef<number | null>(null);
   const lastWatchFlushRef = useRef(0);
+  const sectionEndHandledRef = useRef(false);
+
+  const effectiveEndSeconds = useMemo(
+    () => (activeSection ? getEffectiveEndSeconds(activeSection, sections) : 0),
+    [activeSection, sections],
+  );
 
   const flushWatchProgress = useCallback(() => {
     const section = activeSectionRef.current;
@@ -332,30 +349,129 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
 
   useEffect(() => {
     if (!activeSection) return;
-
     setPersistentVideo({
       courseId: course.id,
       lessonUrl: pathname,
       lessonTitle: course.title,
       sectionTitle: activeSection.title,
       videoId: course.sourceYoutubeId,
-      timestamp: currentSeconds,
+      timestamp: activeSection.startSeconds,
       isPlaying: true,
     });
-
-    return () => {
-      setPersistentMinimized(true);
-    };
   }, [
-    activeSection,
+    activeSection?.id,
+    activeSection?.title,
+    activeSection?.startSeconds,
     course.id,
     course.sourceYoutubeId,
     course.title,
-    currentSeconds,
     pathname,
-    setPersistentMinimized,
     setPersistentVideo,
   ]);
+
+  useEffect(() => {
+    return () => setPersistentMinimized(true);
+  }, [setPersistentMinimized]);
+
+  useEffect(() => {
+    sectionEndHandledRef.current = false;
+  }, [activeSection?.id, effectiveEndSeconds]);
+
+  const markSectionComplete = useCallback(
+    (section: CourseSection) => {
+      const index = sectionIndexOf(sections, section.id);
+      if (!canAccessLearningItem(accessPlan, index, sections.length)) return;
+
+      setCompletedSections((current) => new Set([...current, section.id]));
+      setTaskStates((current) => {
+        const currentState = current[section.id];
+        return { ...current, [section.id]: currentState === "completed" ? "completed" : "draft" };
+      });
+      fetch("/api/v1/learning/section-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId: course.id, sectionId: section.id }),
+      })
+        .then(async (res) => {
+          const json = (await res.json().catch(() => null)) as {
+            success?: boolean;
+            data?: { xpGain?: number; xpReason?: string; leveledUp?: boolean; level?: number };
+          } | null;
+          if (!json?.success || !json.data?.xpGain) return;
+          const { showXpGainOnClient } = await import("@/lib/gamification/show-xp-client");
+          showXpGainOnClient(json.data);
+          router.refresh();
+        })
+        .catch(() => null);
+    },
+    [accessPlan, course.id, router, sections],
+  );
+
+  const handleSectionEnded = useCallback(() => {
+    if (sectionEndHandledRef.current) return;
+    sectionEndHandledRef.current = true;
+
+    const section = activeSectionRef.current;
+    if (!section) return;
+
+    markSectionComplete(section);
+    flushWatchProgress();
+
+    const index = sectionIndexOf(sections, section.id);
+    const next = index >= 0 && index < sections.length - 1 ? sections[index + 1]! : null;
+
+    if (!next) {
+      setTab("tasks");
+      setTaskSubmitSuccess("Video дууслаа. Одоо энэ section-ийн task-аа илгээнэ үү.");
+      return;
+    }
+
+    const nextIndex = index + 1;
+    if (canAccessLearningItem(accessPlan, nextIndex, sections.length)) {
+      setActiveId(next.id);
+      setCurrentSeconds(next.startSeconds);
+      updatePersistentTimestamp(next.startSeconds);
+      prevProgressSecondsRef.current = null;
+      sectionEndHandledRef.current = false;
+      setTaskSubmitSuccess(`"${section.title}" дууслаа. Дараагийн хэсэг рүү шилжлээ.`);
+      return;
+    }
+
+    setUpgradeReason(lockedSectionMessage(nextIndex, sections.length));
+  }, [
+    accessPlan,
+    flushWatchProgress,
+    markSectionComplete,
+    sections,
+    updatePersistentTimestamp,
+  ]);
+
+  const handlePlaybackProgress = useCallback(
+    (seconds: number) => {
+      setCurrentSeconds(seconds);
+      updatePersistentTimestamp(seconds);
+
+      const prev = prevProgressSecondsRef.current;
+      if (prev !== null && seconds > prev && seconds - prev <= 5) {
+        watchDeltaRef.current += seconds - prev;
+      }
+      prevProgressSecondsRef.current = seconds;
+
+      const now = Date.now();
+      if (now - lastWatchFlushRef.current >= 20_000) {
+        lastWatchFlushRef.current = now;
+        flushWatchProgress();
+      }
+
+      const section = activeSectionRef.current;
+      if (!section || sectionEndHandledRef.current) return;
+      const endAt = getEffectiveEndSeconds(section, sections);
+      if (seconds >= endAt - 0.35) {
+        handleSectionEnded();
+      }
+    },
+    [flushWatchProgress, handleSectionEnded, sections, updatePersistentTimestamp],
+  );
 
   if (!activeSection) {
     return (
@@ -371,22 +487,6 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
       sections: chapter.sections.filter((section) => section.title.toLowerCase().includes(query.toLowerCase())),
     }))
     .filter((chapter) => chapter.sections.length > 0);
-
-  const completeActiveSection = () => {
-    const index = sectionIndexOf(sections, activeSection.id);
-    if (!canAccessLearningItem(accessPlan, index, sections.length)) return;
-
-    setCompletedSections((current) => new Set([...current, activeSection.id]));
-    setTaskStates((current) => {
-      const currentState = current[activeSection.id];
-      return { ...current, [activeSection.id]: currentState === "completed" ? "completed" : "draft" };
-    });
-    fetch("/api/v1/learning/section-complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ courseId: course.id, sectionId: activeSection.id }),
-    }).catch(() => {});
-  };
 
   const submitActiveTask = async () => {
     if (!activeSection || submittingTask) return;
@@ -499,42 +599,9 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   };
 
   return (
-    <div
-      className={cn(
-        "flex flex-col overflow-hidden",
-        focusMode ? "fixed inset-0 z-50 bg-[#F8F5FF]" : "-m-5 h-[calc(100vh-4rem)]",
-      )}
-    >
-      {/* ── Header ── */}
-      <header className="shrink-0 border-b border-violet-100 bg-gradient-to-r from-white via-white to-violet-50/80 px-6 py-4 shadow-[0_1px_0_0_rgba(124,58,237,0.07)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.35em] text-violet-500">Course Player</p>
-            <h1 className="mt-1 max-w-xl text-xl font-black leading-tight text-slate-900">{course.title}</h1>
-            <p className="mt-1 text-[13px] text-slate-400">
-              Continue from Section {activeSection.order} at {formatSeconds(currentSeconds)}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => selectSection(activeSection, currentSeconds)}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-5 text-[13px] font-black text-white shadow-sm shadow-violet-200 transition-colors hover:bg-violet-500 active:scale-95"
-            >
-              <Play size={14} /> Continue Learning
-            </button>
-            <button
-              type="button"
-              onClick={() => setFocusMode((value) => !value)}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-violet-200 bg-white px-4 text-[13px] font-black text-violet-700 transition-colors hover:bg-violet-50 active:scale-95"
-            >
-              <Focus size={14} /> {focusMode ? "Exit Focus" : "Focus Mode"}
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <div className="-m-5 flex h-[calc(100vh-4rem)] flex-col overflow-hidden bg-background text-foreground">
       <CourseProgressPanel
+        variant="minimal"
         courseId={course.id}
         courseTitle={course.title}
         completedCount={completedSections.size}
@@ -542,6 +609,19 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
         watchPercent={watchedPercent}
         nextLesson={nextSection ? { id: nextSection.id, title: nextSection.title } : null}
         certificateReadiness={certificateReadiness}
+        activeSectionTitle={`${activeSection.title} · ${formatSeconds(currentSeconds)}`}
+        onContinueSection={() => {
+          if (nextSection) {
+            const nextIndex = sectionIndexOf(sections, nextSection.id);
+            if (!canAccessLearningItem(accessPlan, nextIndex, sections.length)) {
+              setUpgradeReason(lockedSectionMessage(nextIndex, sections.length));
+              return;
+            }
+            selectSection(nextSection);
+            return;
+          }
+          selectSection(activeSection, currentSeconds);
+        }}
         allLessonsComplete={allSectionsComplete}
         peerReviewPending={peerReviewPending}
         finalTaskRemaining={!allSectionsComplete && activeIndex >= sections.length - 2}
@@ -552,64 +632,61 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
         certificateUnlocked={Boolean(certificate)}
       />
 
-      {/* ── Body ── */}
+      <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border px-3 py-1">
+        <span className="mr-auto truncate text-[11px] font-medium text-muted-foreground">
+          {planLabel(accessPlan)} · {allowedSectionCount}/{sections.length} нээгдсэн
+        </span>
+        <button
+          type="button"
+          onClick={() => setFocusMode((value) => !value)}
+          aria-pressed={focusMode}
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-colors",
+            focusMode
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:bg-muted",
+          )}
+        >
+          <Focus size={13} /> {focusMode ? "Focus гарах" : "Focus"}
+        </button>
+      </div>
+
       <div
-        className="flex-1 overflow-hidden"
+        className="grid min-h-0 flex-1 overflow-hidden"
         style={{
-          display: "grid",
-          gridTemplateColumns: focusMode ? "minmax(0,1fr)" : "400px minmax(0,1fr)",
-          gridTemplateRows: "1fr",
+          gridTemplateColumns: "minmax(0,1fr) min(320px, 30vw)",
         }}
       >
-        {/* Left panel */}
-        {!focusMode ? (
-          <aside className="flex min-h-0 flex-col overflow-y-auto border-r border-violet-100 bg-[#FAF8FF]">
-            {/* Progress card */}
-            <div className="shrink-0 border-b border-violet-100 bg-white px-4 pb-4 pt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[13px] font-black text-slate-700">Watch progress</span>
-                <span className="text-[13px] font-black text-violet-700">{watchedPercent}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-violet-100">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-violet-500 to-violet-600 transition-all"
-                  style={{ width: `${watchedPercent}%` }}
-                />
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-400">
-                {completedSections.size} of {sections.length} sections completed
-              </p>
-            </div>
-
+          <aside className="order-2 flex min-h-0 flex-col overflow-y-auto border-l border-border bg-muted/20">
             {/* Search */}
-            <div className="shrink-0 border-b border-violet-100 bg-white px-3 py-2.5">
+            <div className="shrink-0 border-b border-border px-3 py-2">
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search sections…"
-                  className="h-9 w-full rounded-lg border border-violet-100 bg-violet-50/60 pl-9 pr-3 text-[13px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-200/60"
+                  placeholder="Хэсэг хайх…"
+                  className="h-9 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-[13px] text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </div>
             </div>
 
             {/* Chapter accordion */}
-            <div className="flex flex-col divide-y divide-violet-50">
+            <div className="flex flex-col divide-y divide-border">
               {filteredChapters.map((chapter) => {
                 const open = query.trim().length > 0 || openChapterId === chapter.id;
                 const doneInChapter = chapter.sections.filter((section) => completedSections.has(section.id)).length;
 
                 return (
-                  <div key={chapter.id} className="bg-white">
+                  <div key={chapter.id} className="bg-card">
                     <button
                       type="button"
                       onClick={() => setOpenChapterId(openChapterId === chapter.id ? "" : chapter.id)}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-violet-50/40 transition-colors"
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
                     >
                       <div className="min-w-0">
-                        <p className="text-[14px] font-black text-slate-800">{chapter.title}</p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">
+                        <p className="text-[14px] font-bold text-foreground">{chapter.title}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
                           {formatSeconds(chapter.start)} – {formatSeconds(chapter.end)} · {doneInChapter}/{chapter.sections.length} done
                         </p>
                       </div>
@@ -620,7 +697,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                     </button>
 
                     {open ? (
-                      <div className="border-t border-violet-50">
+                      <div className="border-t border-border">
                         {chapter.sections.map((section) => {
                           const selected = section.id === activeSection.id;
                           const done = completedSections.has(section.id);
@@ -634,12 +711,12 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                               type="button"
                               onClick={() => selectSection(section)}
                               className={cn(
-                                "group relative w-full border-b border-violet-50 px-4 py-3 text-left last:border-b-0 transition-colors",
+                                "group relative w-full border-b border-border px-4 py-3 text-left last:border-b-0 transition-colors",
                                 selected
-                                  ? "bg-violet-50/80"
+                                  ? "bg-primary/10"
                                   : locked
-                                    ? "opacity-60 hover:bg-slate-50"
-                                    : "hover:bg-violet-50/40",
+                                    ? "opacity-60 hover:bg-muted/50"
+                                    : "hover:bg-muted/50",
                               )}
                             >
                               {selected && (
@@ -652,10 +729,10 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                                     done
                                       ? "bg-emerald-500 text-white"
                                       : locked
-                                        ? "bg-slate-200 text-slate-400"
+                                        ? "bg-muted text-muted-foreground"
                                         : selected
                                           ? "bg-violet-600 text-white"
-                                          : "bg-violet-100 text-violet-700",
+                                          : "bg-primary/15 text-primary",
                                   )}
                                 >
                                   {done ? <CheckCircle2 size={13} /> : locked ? <Lock size={12} /> : section.order}
@@ -664,25 +741,25 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                                   <p
                                     className={cn(
                                       "line-clamp-1 text-[13px] font-bold leading-snug",
-                                      selected ? "text-violet-900" : locked ? "text-slate-400" : "text-slate-800",
+                                      selected ? "text-primary" : locked ? "text-muted-foreground" : "text-foreground",
                                     )}
                                   >
                                     {section.title}
                                   </p>
-                                  <p className="mt-0.5 font-mono text-[11px] text-slate-400">{sectionRange(section)}</p>
+                                  <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{sectionRange(section)}</p>
                                 </div>
                                 <span
                                   className={cn(
                                     "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black",
                                     locked
-                                      ? "bg-slate-100 text-slate-400"
+                                      ? "bg-muted text-muted-foreground"
                                       : done
                                         ? "bg-emerald-50 text-emerald-600"
                                         : taskState === "submitted"
                                           ? "bg-amber-50 text-amber-600"
                                           : taskState === "draft"
                                             ? "bg-blue-50 text-blue-600"
-                                            : "bg-slate-100 text-slate-500",
+                                            : "bg-muted text-muted-foreground",
                                   )}
                                 >
                                   {locked ? "Locked" : statusText(taskState)}
@@ -698,110 +775,47 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
               })}
             </div>
           </aside>
-        ) : null}
 
-        {/* Right panel */}
-        <main className="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto bg-[#F8F5FF] p-4 lg:p-5">
-          {/* Video */}
-          <div className="w-full max-w-[640px]">
-            <YouTubeSectionPlayer
-              key={activeSection.id}
-              videoId={course.sourceYoutubeId}
-              startSeconds={activeSection.startSeconds}
-              endSeconds={activeSection.endSeconds}
-              title={activeSection.title}
-              onEnded={() => {
-                completeActiveSection();
-                setTab("tasks");
-                setTaskSubmitSuccess("Video дууслаа. Одоо энэ section-ийн task-аа илгээнэ үү.");
-              }}
-              onProgress={(seconds) => {
-                setCurrentSeconds(seconds);
-                updatePersistentTimestamp(seconds);
-
-                // Accumulate watch delta from actual playback
-                const prev = prevProgressSecondsRef.current;
-                if (prev !== null && seconds > prev && seconds - prev <= 5) {
-                  watchDeltaRef.current += seconds - prev;
-                }
-                prevProgressSecondsRef.current = seconds;
-
-                // Flush to DB every 20s of wall time
-                const now = Date.now();
-                if (now - lastWatchFlushRef.current >= 20_000) {
-                  lastWatchFlushRef.current = now;
-                  flushWatchProgress();
-                }
-              }}
-              onPlayingChange={setPersistentPlaying}
-            />
-          </div>
-
-          {/* Now Watching + Access Plan */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {/* Now Watching */}
-            <section className="relative min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-violet-600 to-violet-700 p-4 shadow-md shadow-violet-200">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-300">Now Watching</p>
-              <h2 className="mt-2 line-clamp-2 pr-10 text-[16px] font-black leading-snug text-white">
-                {activeSection.title}
-              </h2>
-              <p className="mt-1.5 text-[12px] text-violet-300">
-                Section {activeSection.order} · {sectionRange(activeSection)}
-              </p>
-              <span className="absolute right-3.5 top-3.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 text-[15px] font-black text-white">
-                {activeSection.order}
-              </span>
-            </section>
-
-            {/* Access Plan */}
-            <section
+        {/* Main panel */}
+        <main
+          className={cn(
+            "order-1 flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto p-3 lg:p-4",
+            focusMode && "gap-2",
+          )}
+        >
+          <div className={cn("w-full", focusMode && "shrink-0")}>
+            <div
               className={cn(
-                "min-w-0 rounded-2xl border p-4 shadow-sm",
-                accessPlan === "STANDARD"
-                  ? "border-slate-200 bg-slate-50"
-                  : accessPlan === "PRO"
-                    ? "border-amber-200 bg-amber-50"
-                    : "border-violet-200 bg-violet-50",
+                "w-full overflow-hidden rounded-xl border border-border bg-black shadow-md transition-[min-height,box-shadow] duration-300 ease-out",
+                focusMode
+                  ? "min-h-[min(72vh,calc((100vw-360px)*9/16))] ring-2 ring-primary/25 shadow-lg shadow-primary/10"
+                  : "aspect-video",
               )}
             >
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Access Plan</p>
-              <div className="mt-2.5 flex items-center gap-3">
-                <div
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-xl",
-                    accessPlan === "STANDARD"
-                      ? "bg-slate-200 text-slate-500"
-                      : accessPlan === "PRO"
-                        ? "bg-amber-200 text-amber-700"
-                        : "bg-violet-200 text-violet-700",
-                  )}
-                >
-                  {accessPlan === "STANDARD" ? <Lock size={18} /> : <Award size={18} />}
-                </div>
-                <div className="min-w-0">
-                  <p
-                    className={cn(
-                      "text-[15px] font-black",
-                      accessPlan === "STANDARD"
-                        ? "text-slate-700"
-                        : accessPlan === "PRO"
-                          ? "text-amber-700"
-                          : "text-violet-700",
-                    )}
-                  >
-                    {planLabel(accessPlan)}
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-slate-500">
-                    {planUnlockHint(accessPlan)} · {allowedSectionCount}/{sections.length}
-                  </p>
-                </div>
-              </div>
-            </section>
+              <YouTubeSectionPlayer
+                key={activeSection.id}
+                videoId={course.sourceYoutubeId}
+                startSeconds={activeSection.startSeconds}
+                endSeconds={effectiveEndSeconds}
+                title={activeSection.title}
+                theater={focusMode}
+                onEnded={handleSectionEnded}
+                onProgress={handlePlaybackProgress}
+                onPlayingChange={setPersistentPlaying}
+              />
+            </div>
+            <h2 className="mt-2 line-clamp-2 text-[15px] font-bold leading-snug text-foreground">
+              {activeSection.title}
+            </h2>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              Хэсэг {activeSection.order} · {sectionRange(activeSection)} · {formatSeconds(currentSeconds)} /{" "}
+              {formatSeconds(effectiveEndSeconds)}
+            </p>
           </div>
 
           {/* Tabs */}
-          <section className="overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-sm">
-            <div className="flex gap-1 overflow-x-auto bg-violet-50/60 p-1.5">
+          <section className="shrink-0 rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex gap-1 overflow-x-auto border-b border-border bg-muted/40 p-1">
               {tabs.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -810,8 +824,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                   className={cn(
                     "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-[12px] font-black transition-all",
                     tab === id
-                      ? "bg-white text-violet-700 shadow-sm shadow-violet-100"
-                      : "text-slate-500 hover:text-violet-600",
+                      ? "bg-card text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <Icon size={13} /> {label}
@@ -819,19 +833,19 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
               ))}
             </div>
 
-            <div className="p-4">
+            <div className="p-4 pb-8">
               {tab === "overview" ? (
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
-                    { label: "Sections", value: `${sections.length}`, color: "from-violet-500 to-violet-600", light: "bg-violet-50 text-violet-600" },
-                    { label: "Completed", value: `${completedSections.size}`, color: "from-emerald-500 to-emerald-600", light: "bg-emerald-50 text-emerald-600" },
-                    { label: "Duration", value: estimatedDuration, color: "from-amber-500 to-amber-600", light: "bg-amber-50 text-amber-600" },
+                    { label: "Sections", value: `${sections.length}`, color: "from-violet-500 to-violet-600", light: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+                    { label: "Completed", value: `${completedSections.size}`, color: "from-emerald-500 to-emerald-600", light: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+                    { label: "Duration", value: estimatedDuration, color: "from-amber-500 to-amber-600", light: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
                   ].map(({ label, value, color, light }) => (
-                    <div key={label} className="overflow-hidden rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+                    <div key={label} className="overflow-hidden rounded-xl border border-border bg-muted/30 p-4">
                       <span className={cn("inline-block rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", light)}>
                         {label}
                       </span>
-                      <p className={cn("mt-2 bg-gradient-to-r bg-clip-text text-[26px] font-black text-transparent", color)}>
+                      <p className={cn("mt-2 bg-gradient-to-r bg-clip-text text-[22px] font-black text-transparent", color)}>
                         {value}
                       </p>
                     </div>
@@ -842,14 +856,14 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
               {tab === "description" ? (
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
                   <div>
-                    <h3 className="text-xl font-black text-slate-900">{activeSection.title}</h3>
-                    <p className="mt-3 text-[14px] leading-7 text-slate-600">
+                    <h3 className="text-lg font-bold text-foreground">{activeSection.title}</h3>
+                    <p className="mt-3 text-[14px] leading-7 text-muted-foreground">
                       This player turns the course video into section-based learning. Use the chapter list to jump between
                       timestamps, complete tasks, and save timestamp notes while studying.
                     </p>
-                    <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 p-4">
-                      <p className="text-[13px] font-black text-violet-700">Current section</p>
-                      <p className="mt-1.5 text-[13px] leading-6 text-slate-600">
+                    <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4">
+                      <p className="text-[13px] font-bold text-primary">Current section</p>
+                      <p className="mt-1.5 text-[13px] leading-6 text-muted-foreground">
                         Section {activeSection.order} covers <span className="font-bold">{activeSection.title}</span> from{" "}
                         {sectionRange(activeSection)}.
                       </p>
@@ -861,9 +875,9 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                       ["Progress", `${completedSections.size}/${sections.length} completed`],
                       ["Access", `${allowedSectionCount}/${sections.length} unlocked`],
                     ].map(([label, value]) => (
-                      <div key={label} className="rounded-xl border border-violet-100 p-3.5">
-                        <p className="text-[10px] font-black uppercase tracking-wide text-violet-600">{label}</p>
-                        <p className="mt-1.5 text-[13px] font-bold text-slate-700">{value}</p>
+                      <div key={label} className="rounded-xl border border-border bg-muted/30 p-3.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-primary">{label}</p>
+                        <p className="mt-1.5 text-[13px] font-bold text-foreground">{value}</p>
                       </div>
                     ))}
                   </div>
@@ -872,38 +886,38 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
 
               {tab === "tasks" ? (
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
-                  <div className="rounded-xl border border-violet-100 bg-violet-50 p-4">
+                  <div className="rounded-xl border border-border bg-muted/40 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="text-[11px] font-black uppercase tracking-wide text-violet-700">Section task</p>
-                        <h3 className="mt-2 text-[17px] font-black text-slate-900">{activeSection.title}</h3>
-                        <p className="mt-2 text-[13px] leading-6 text-slate-600">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-primary">Section task</p>
+                        <h3 className="mt-2 text-[17px] font-bold text-foreground">{activeSection.title}</h3>
+                        <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
                           Video дууссаны дараа энэ section-ийн даалгавраа илгээж peer review-д оруулна. Бүх section
                           task үнэлэгдсэний дараа certificate автоматаар нээгдэнэ.
                         </p>
                       </div>
-                      <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-violet-700 shadow-sm">
+                      <span className="rounded-full border border-border bg-card px-3 py-1 text-[11px] font-bold text-primary shadow-sm">
                         {activeTaskSubmission?.status ?? statusText(activeTaskState)}
                       </span>
                     </div>
 
-                    <div className="mt-4 rounded-xl border border-violet-100 bg-white p-3.5">
-                      <p className="text-[12px] font-black text-slate-800">Даалгавар</p>
-                      <p className="mt-1.5 text-[13px] leading-6 text-slate-600">
+                    <div className="mt-4 rounded-xl border border-border bg-card p-3.5">
+                      <p className="text-[12px] font-bold text-foreground">Даалгавар</p>
+                      <p className="mt-1.5 text-[13px] leading-6 text-muted-foreground">
                         <span className="font-bold">{activeSection.title}</span> хэсгээс сурсан гол санаа, хийсэн алхам,
                         гарсан үр дүнгээ тайлбарла. Код, дизайн, файл эсвэл demo байгаа бол холбоосоо хавсарга.
                       </p>
                     </div>
 
                     {!activeSectionCompleted ? (
-                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] font-semibold text-amber-700">
+                      <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[13px] font-semibold text-amber-700 dark:text-amber-300">
                         Энэ task video section дуустал үзсэний дараа идэвхжинэ.
                       </div>
                     ) : null}
 
                     {activeTaskSubmission ? (
-                      <div className="mt-4 rounded-xl border border-white bg-white p-3.5 text-[13px] text-slate-600">
-                        <p className="font-black text-slate-800">Илгээсэн task</p>
+                      <div className="mt-4 rounded-xl border border-border bg-card p-3.5 text-[13px] text-muted-foreground">
+                        <p className="font-bold text-foreground">Илгээсэн task</p>
                         <p className="mt-1">
                           Review: {activeTaskSubmission.completedReviewCount}/{activeTaskSubmission.reviewCount}
                           {activeTaskSubmission.score != null ? ` · Score: ${Math.round(activeTaskSubmission.score)}/100` : ""}
@@ -921,14 +935,14 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                           onChange={(event) => setTaskDraft(event.target.value)}
                           disabled={!activeSectionCompleted || submittingTask}
                           placeholder="Юу хийсэн, хэрхэн хийсэн, ямар үр дүн гарсан талаар бичнэ үү..."
-                          className="min-h-[150px] w-full resize-none rounded-xl border border-violet-100 bg-white p-4 text-[14px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+                          className="min-h-[150px] w-full resize-none rounded-xl border border-border bg-background p-4 text-[14px] text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                         <input
                           value={taskUrl}
                           onChange={(event) => setTaskUrl(event.target.value)}
                           disabled={!activeSectionCompleted || submittingTask}
                           placeholder="Submission URL (optional)"
-                          className="h-10 w-full rounded-xl border border-violet-100 bg-white px-3 text-[13px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+                          className="h-10 w-full rounded-xl border border-border bg-background px-3 text-[13px] text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                         <button
                           type="button"
@@ -942,12 +956,12 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                     )}
 
                     {taskSubmitError ? (
-                      <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-[12px] font-semibold text-red-700">
+                      <p className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[12px] font-semibold text-red-700 dark:text-red-300">
                         {taskSubmitError}
                       </p>
                     ) : null}
                     {taskSubmitSuccess ? (
-                      <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[12px] font-semibold text-emerald-700">
+                      <p className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
                         {taskSubmitSuccess}
                       </p>
                     ) : null}
@@ -961,9 +975,9 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                     ) : null}
                   </div>
 
-                  <div className="rounded-xl border border-violet-100 bg-white p-4">
-                    <p className="text-[11px] font-black uppercase tracking-wide text-violet-600">Next step</p>
-                    <p className="mt-2 text-[13px] leading-6 text-slate-600">
+                  <div className="rounded-xl border border-border bg-muted/30 p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-primary">Next step</p>
+                    <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
                       {activeTaskSubmission
                         ? nextSection
                           ? `Task илгээгдсэн. Одоо Section ${nextSection.order}: ${nextSection.title} руу үргэлжлүүлж болно.`
@@ -979,7 +993,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                       <button
                         type="button"
                         onClick={() => selectSection(nextSection)}
-                        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-[13px] font-black text-white hover:bg-slate-800"
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-bold text-background hover:opacity-90"
                       >
                         <Play size={14} /> Next section
                       </button>
@@ -1002,7 +1016,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                     ) : null}
                     <a
                       href="/student/peer-review"
-                      className="mt-2 inline-flex items-center gap-2 rounded-xl border border-violet-200 px-4 py-2.5 text-[13px] font-black text-violet-700 hover:bg-violet-50"
+                      className="mt-2 inline-flex items-center gap-2 rounded-xl border border-violet-200 px-4 py-2.5 text-[13px] font-bold text-primary hover:bg-violet-50"
                     >
                       <ClipboardCheck size={14} /> Peer review
                     </a>
@@ -1017,7 +1031,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                       value={noteDraft}
                       onChange={(event) => setNoteDraft(event.target.value)}
                       placeholder={`Write a note at ${formatSeconds(currentSeconds)}`}
-                      className="min-h-[140px] w-full resize-none rounded-xl border border-violet-100 bg-violet-50 p-4 text-[14px] outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-200"
+                      className="min-h-[140px] w-full resize-none rounded-xl border border-border bg-muted/40 p-4 text-[14px] outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-200"
                     />
                     <button
                       type="button"
@@ -1030,28 +1044,28 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
 
                   <div className="flex max-h-[320px] flex-col gap-2.5 overflow-y-auto pr-1">
                     {notes.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-violet-200 bg-violet-50 p-4 text-[13px] text-slate-500">
+                      <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-[13px] text-muted-foreground">
                         No notes yet.
                       </div>
                     ) : null}
                     {notes.map((note) => {
                       const noteSection = sections.find((section) => section.id === note.sectionId);
                       return (
-                        <div key={note.id} className="rounded-xl border border-violet-100 bg-white p-3.5">
+                        <div key={note.id} className="rounded-xl border border-border bg-card p-3.5">
                           <button
                             type="button"
                             onClick={() => noteSection && selectSection(noteSection, note.seconds)}
                             className="w-full text-left"
                           >
-                            <p className="font-mono text-[11px] font-black text-violet-700">
+                            <p className="font-mono text-[11px] font-bold text-primary">
                               {noteSection ? `Section ${noteSection.order}` : "Section"} · {formatSeconds(note.seconds)}
                             </p>
-                            <p className="mt-1.5 text-[13px] leading-6 text-slate-700">{note.content}</p>
+                            <p className="mt-1.5 text-[13px] leading-6 text-foreground">{note.content}</p>
                           </button>
                           <button
                             type="button"
                             onClick={() => deleteNote(note.id)}
-                            className="mt-2 text-[11px] font-black text-slate-400 hover:text-rose-600"
+                            className="mt-2 text-[11px] font-bold text-muted-foreground hover:text-destructive"
                           >
                             Delete
                           </button>

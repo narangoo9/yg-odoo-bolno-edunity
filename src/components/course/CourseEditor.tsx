@@ -101,9 +101,17 @@ export function CourseEditor({ courseId, status, thumbnailUrl, modules }: Props)
         toast({ type: "error", title: "Алдаа", description: typeof result.error === "string" ? result.error : "Дахин оролдоно уу" });
         return;
       }
+      const pendingReview = "pendingReview" in result && result.pendingReview;
       toast({
         type: "success",
-        title: status === "PUBLISHED" ? "Хэвлэлээс хурдан авлаа" : "Нийтэд нээгдлээ",
+        title: status === "PUBLISHED"
+          ? "Хэвлэлээс хурдан авлаа"
+          : pendingReview
+            ? "Админы зөвшөөрөл хүлээгдэж байна"
+            : "Нийтэд нээгдлээ",
+        description: pendingReview
+          ? "Курс админ шалгаад зөвшөөрсний дараа нийтэд харагдана."
+          : undefined,
       });
       router.refresh();
     });

@@ -1,11 +1,13 @@
 // ─── modules/gamification/application/gamification-service.ts ───────────────
 
 import { db } from "@/lib/db";
-import { BadgeType, XpAction } from "@prisma/client";
+import { BadgeType, NotificationType, XpAction } from "@prisma/client";
 import { invalidateCache, redis } from "@/lib/cache";
 import { revalidatePath } from "next/cache";
 import { revalidateUserDashboard, revalidateUserSidebar } from "@/lib/dashboard-cache";
 import { LEADERBOARD_USER_WHERE } from "@/lib/leaderboard/ranks";
+import { getXpActionLabel } from "@/lib/gamification/xp-messages";
+import { dashboardCacheTags } from "@/lib/dashboard-cache";
 
 // ── XP тооцооны тогтмолууд ──────────────────────────────────────────
 export const XP_REWARDS: Record<XpAction, number> = {
@@ -39,16 +41,47 @@ export function getLevelFromXP(xp: number): number {
 }
 
 // ── XP нэмэх ── гол функц ───────────────────────────────────────────
+export type AwardXPResult = {
+  xp: number;
+  level: number;
+  leveledUp: boolean;
+  newBadges: BadgeType[];
+  amount: number;
+  action: XpAction;
+  reason: string;
+};
+
+async function createXpNotification(
+  userId: string,
+  amount: number,
+  reason: string,
+  leveledUp: boolean,
+  level: number,
+) {
+  const title = leveledUp ? `Level ${level} боллоо! +${amount} XP` : `+${amount} XP олсон`;
+  const body = leveledUp ? `${reason} · Шинэ түвшинд хүрлээ` : reason;
+
+  await db.notification.create({
+    data: {
+      userId,
+      type: NotificationType.SYSTEM,
+      title,
+      body,
+      data: { amount, leveledUp, level, reason },
+    },
+  });
+  await invalidateCache(dashboardCacheTags.notifications(userId));
+}
+
 export async function awardXP(
   userId: string,
   action: XpAction,
-  entityId?: string
-): Promise<{ xp: number; level: number; leveledUp: boolean; newBadges: BadgeType[] }> {
+  entityId?: string,
+): Promise<AwardXPResult> {
   const amount = XP_REWARDS[action];
+  const reason = getXpActionLabel(action);
 
-  // Atomic transaction — race condition-оос хамгаалах
   const result = await db.$transaction(async (tx) => {
-    // 1. User update
     const user = await tx.user.update({
       where: { id: userId },
       data: { xp: { increment: amount } },
@@ -84,25 +117,33 @@ export async function awardXP(
   const oldLevel = getLevelFromXP(oldXP);
   const leveledUp = newLevel > oldLevel;
 
-  // Leaderboard cache цэвэрлэх
+  if (newLevel !== oldLevel) {
+    await db.user.update({
+      where: { id: userId },
+      data: { level: newLevel },
+    });
+  }
+
   await invalidateCache("leaderboard:*");
   revalidateUserDashboard(userId);
+  revalidateUserSidebar(userId);
 
-  // Badge шалгах
   const newBadges = await checkAndAwardBadges(userId, action, result.xp);
 
-  return { xp: result.xp, level: newLevel, leveledUp, newBadges };
+  await createXpNotification(userId, amount, reason, leveledUp, newLevel).catch(() => null);
+
+  return { xp: result.xp, level: newLevel, leveledUp, newBadges, amount, action, reason };
 }
 
-// ── Streak шинэчлэх ─────────────────────────────────────────────────
-export async function updateStreak(userId: string): Promise<number> {
+// ── Streak шинэчлэх (өдөр бүр эхний идэвхтэй үед) ─────────────────────
+async function applyDailyStreakUpdate(userId: string): Promise<{ streak: number; updated: boolean }> {
   if (redis) {
     const today = new Date().toISOString().slice(0, 10);
     const lockKey = `streak:lock:${userId}:${today}`;
     const acquired = await redis.set(lockKey, "1", "EX", 86400, "NX");
     if (!acquired) {
       const user = await db.user.findUnique({ where: { id: userId }, select: { streak: true } });
-      return user?.streak ?? 0;
+      return { streak: user?.streak ?? 0, updated: false };
     }
   }
 
@@ -112,36 +153,45 @@ export async function updateStreak(userId: string): Promise<number> {
       select: { streak: true, lastStreakAt: true },
     });
 
-    if (!user) return 0;
+    if (!user) return { streak: 0, updated: false };
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const lastStreak = user.lastStreakAt
-      ? new Date(
-          user.lastStreakAt.getFullYear(),
-          user.lastStreakAt.getMonth(),
-          user.lastStreakAt.getDate()
-        )
+      ? new Date(user.lastStreakAt.getFullYear(), user.lastStreakAt.getMonth(), user.lastStreakAt.getDate())
       : null;
 
-    if (lastStreak && lastStreak.getTime() === today.getTime()) return user.streak;
+    if (lastStreak && lastStreak.getTime() === today.getTime()) {
+      return { streak: user.streak, updated: false };
+    }
 
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     const continued = lastStreak && lastStreak.getTime() === yesterday.getTime();
-    const newStreak = continued ? user.streak + 1 : 1;
+    const streak = continued ? user.streak + 1 : 1;
 
     await tx.user.update({
       where: { id: userId },
-      data: { streak: newStreak, lastStreakAt: now },
+      data: { streak, lastStreakAt: now },
     });
 
-    return newStreak;
-  }).then(async (newStreak) => {
-    await awardXP(userId, XpAction.STREAK_BONUS);
-    await checkStreakBadges(userId, newStreak);
-    return newStreak;
+    return { streak, updated: true };
   });
+}
+
+export async function updateStreak(userId: string): Promise<number> {
+  const { streak, updated } = await applyDailyStreakUpdate(userId);
+  if (updated) {
+    await awardXP(userId, XpAction.STREAK_BONUS).catch(() => null);
+    await checkStreakBadges(userId, streak);
+    revalidateUserSidebar(userId);
+  }
+  return streak;
+}
+
+/** Нэвтрэх / dashboard нээхэд streak шинэчлэнэ */
+export async function recordDailyVisit(userId: string): Promise<number> {
+  return updateStreak(userId);
 }
 
 // ── Badge шалгах ────────────────────────────────────────────────────

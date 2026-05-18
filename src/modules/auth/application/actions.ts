@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { auth, signOut } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
+import { orgPendingSettings } from "@/lib/organization-approval";
+import { notifyAdminOrgRegistration } from "@/modules/admin/application/moderation-actions";
 import { awardXP, XP_REWARDS } from "@/modules/gamification/application/gamification-service";
 import { XpAction } from "@prisma/client";
 import {
@@ -360,6 +362,8 @@ export async function onboardOrganization(input: OrgOnboardInput) {
         description: orgDescription ?? null,
         website: orgWebsite ?? null,
         ownerId: admin.id,
+        isActive: false,
+        settings: orgPendingSettings(),
       },
     });
 
@@ -393,7 +397,15 @@ export async function onboardOrganization(input: OrgOnboardInput) {
     },
   }).catch(() => null);
 
-  return { success: true, orgId: result.org.id, adminId: result.admin.id };
+  notifyAdminOrgRegistration({
+    orgId: result.org.id,
+    orgName,
+    orgSlug,
+    adminName,
+    adminEmail,
+  }).catch(() => null);
+
+  return { success: true, orgId: result.org.id, adminId: result.admin.id, pendingApproval: true };
 }
 
 // ─── RESEND VERIFICATION ──────────────────────────────────────────────────────

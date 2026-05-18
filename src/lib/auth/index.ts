@@ -4,10 +4,12 @@ import type { Adapter } from "next-auth/adapters";
 import { createAuthAdapter } from "@/lib/auth/adapter";
 import {
   LoginOAuthOnlyError,
+  LoginOrgPendingError,
   LoginSuspendedError,
   LoginUserNotFoundError,
   LoginWrongPasswordError,
 } from "@/lib/auth/credentials-errors";
+import { isOrganizationApproved } from "@/lib/organization-approval";
 import type { Session } from "next-auth";
 import type { Provider } from "next-auth/providers";
 import { getToken } from "next-auth/jwt";
@@ -104,6 +106,16 @@ providers.push(
       const passwordMatch = await bcrypt.compare(password, user.passwordHash);
       if (!passwordMatch) {
         throw new LoginWrongPasswordError();
+      }
+
+      if (user.role === "COMPANY" && user.organizationId) {
+        const org = await db.organization.findUnique({
+          where: { id: user.organizationId },
+          select: { isActive: true, settings: true },
+        });
+        if (!isOrganizationApproved(org)) {
+          throw new LoginOrgPendingError();
+        }
       }
 
       await db.user
@@ -238,6 +250,7 @@ const nextAuthResult = NextAuth({
             token.organizationId = null;
             token.onboardingCompleted = false;
             token.profileComplete = false;
+            token.orgApproved = true;
           }
           return;
         }
@@ -248,6 +261,16 @@ const nextAuthResult = NextAuth({
         token.picture = dbUser.avatarUrl;
         token.onboardingCompleted = dbUser.onboardingCompleted;
         token.profileComplete = Boolean(dbUser.passwordHash);
+
+        if (dbUser.role === "COMPANY" && dbUser.organizationId) {
+          const org = await db.organization.findUnique({
+            where: { id: dbUser.organizationId },
+            select: { isActive: true, settings: true },
+          });
+          token.orgApproved = isOrganizationApproved(org);
+        } else {
+          token.orgApproved = true;
+        }
       };
 
       if (user && userId) {
@@ -259,6 +282,12 @@ const nextAuthResult = NextAuth({
             select: { id: true },
           })
           .catch(() => null);
+        if ((token.role as string | undefined) === "USER") {
+          const { recordDailyVisit } = await import(
+            "@/modules/gamification/application/gamification-service"
+          );
+          await recordDailyVisit(userId).catch(() => null);
+        }
       } else if (trigger === "update") {
         if (updateSession?.user) {
           if (typeof updateSession.user.name === "string") {
@@ -314,6 +343,7 @@ async function getServerSessionFromToken(): Promise<Session | null> {
       organizationId: (token.organizationId as string | null | undefined) ?? null,
       onboardingCompleted: Boolean(token.onboardingCompleted),
       profileComplete: Boolean(token.profileComplete),
+      orgApproved: token.orgApproved !== undefined ? Boolean(token.orgApproved) : true,
     },
     expires:
       typeof token.exp === "number"

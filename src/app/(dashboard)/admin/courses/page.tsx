@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { Search, BookOpen, Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/index";
 import { formatDate, formatCurrency } from "@/lib/utils";
+import { CourseApprovalActions } from "@/components/admin/CourseApprovalActions";
 
 export const metadata: Metadata = { title: "Курс удирдлага" };
 
@@ -185,12 +186,16 @@ export default async function AdminCoursesPage({ searchParams }: Props) {
                     <Badge variant={sc.variant}>{sc.label}</Badge>
                   </td>
                   <td className="px-4 py-3.5 text-right">
-                    <Link
-                      href={`/admin/courses/${course.id}`}
-                      className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors"
-                    >
-                      Дэлгэрэнгүй
-                    </Link>
+                    {course.status === "UNDER_REVIEW" ? (
+                      <CourseApprovalActions courseId={course.id} />
+                    ) : (
+                      <Link
+                        href={`/admin/courses/${course.id}`}
+                        className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors"
+                      >
+                        Дэлгэрэнгүй
+                      </Link>
+                    )}
                   </td>
                 </tr>
               );

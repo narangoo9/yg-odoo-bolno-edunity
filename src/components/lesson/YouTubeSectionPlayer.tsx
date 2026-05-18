@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 
 declare global {
   interface Window {
@@ -16,7 +17,12 @@ declare global {
           };
         },
       ) => YouTubePlayer;
-      PlayerState?: { ENDED: number };
+      PlayerState?: {
+        ENDED: number;
+        PLAYING: number;
+        PAUSED: number;
+        BUFFERING: number;
+      };
     };
     onYouTubeIframeAPIReady?: () => void;
   }
@@ -24,6 +30,7 @@ declare global {
 
 interface YouTubePlayer {
   loadVideoById(input: { videoId: string; startSeconds: number; endSeconds: number }): void;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
   getCurrentTime(): number;
   pauseVideo(): void;
   playVideo(): void;
@@ -34,8 +41,9 @@ interface YouTubePlayer {
 interface Props {
   videoId: string;
   startSeconds: number;
-  endSeconds?: number | null;
+  endSeconds: number;
   title: string;
+  theater?: boolean;
   onEnded?: () => void;
   onProgress?: (seconds: number) => void;
   onPlayingChange?: (isPlaying: boolean) => void;
@@ -71,6 +79,7 @@ export function YouTubeSectionPlayer({
   startSeconds,
   endSeconds,
   title,
+  theater = false,
   onEnded,
   onProgress,
   onPlayingChange,
@@ -82,8 +91,11 @@ export function YouTubeSectionPlayer({
   const progressRef = useRef(onProgress);
   const playingRef = useRef(onPlayingChange);
   const hasEndedRef = useRef(false);
+  const boundsRef = useRef({ start: startSeconds, end: endSeconds });
   const [isReady, setIsReady] = useState(false);
   const [hasPlayer, setHasPlayer] = useState(false);
+
+  boundsRef.current = { start: startSeconds, end: endSeconds };
 
   useEffect(() => {
     endedRef.current = onEnded;
@@ -101,37 +113,74 @@ export function YouTubeSectionPlayer({
     hasEndedRef.current = false;
   }, [videoId, startSeconds, endSeconds]);
 
+  const finishSection = (player?: YouTubePlayer | null) => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
+    try {
+      player?.pauseVideo();
+    } catch {
+      // Player may already be destroyed during navigation
+    }
+    endedRef.current?.();
+  };
+
+  const enforceBounds = (player: YouTubePlayer) => {
+    if (typeof player.getCurrentTime !== "function") return;
+    const { start, end } = boundsRef.current;
+    const time = player.getCurrentTime();
+
+    if (time < start - 0.5) {
+      player.seekTo(start, true);
+      return;
+    }
+
+    progressRef.current?.(time);
+
+    if (time >= end - 0.25) {
+      finishSection(player);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
     loadYouTubeApi().then(() => {
       if (cancelled || !window.YT?.Player) return;
 
+      const loadSegment = (player: YouTubePlayer) => {
+        player.loadVideoById({
+          videoId,
+          startSeconds,
+          endSeconds,
+        });
+      };
+
       if (!playerRef.current) {
         playerRef.current = new window.YT.Player(containerId, {
           videoId,
           playerVars: {
             start: startSeconds,
-            ...(endSeconds != null ? { end: endSeconds } : {}),
+            end: endSeconds,
             rel: 0,
             enablejsapi: 1,
             modestbranding: 1,
             playsinline: 1,
+            ...(typeof window !== "undefined" ? { origin: window.location.origin } : {}),
           },
           events: {
             onReady: (event) => {
               setIsReady(true);
-              event.target.loadVideoById({
-                videoId,
-                startSeconds,
-                endSeconds: endSeconds ?? startSeconds + 86400,
-              });
+              loadSegment(event.target);
             },
             onStateChange: (event) => {
-              playingRef.current?.(event.data === 1);
-              if (event.data === window.YT?.PlayerState?.ENDED && !hasEndedRef.current) {
-                hasEndedRef.current = true;
-                endedRef.current?.();
+              const playing = event.data === window.YT?.PlayerState?.PLAYING;
+              playingRef.current?.(playing);
+              if (event.data === window.YT?.PlayerState?.ENDED) {
+                finishSection(event.target);
+                return;
+              }
+              if (playing) {
+                enforceBounds(event.target);
               }
             },
           },
@@ -142,11 +191,8 @@ export function YouTubeSectionPlayer({
 
       setHasPlayer(true);
       setIsReady(true);
-      playerRef.current.loadVideoById({
-        videoId,
-        startSeconds,
-        endSeconds: endSeconds ?? startSeconds + 86400,
-      });
+      hasEndedRef.current = false;
+      loadSegment(playerRef.current);
     });
 
     return () => {
@@ -155,59 +201,41 @@ export function YouTubeSectionPlayer({
   }, [containerId, videoId, startSeconds, endSeconds]);
 
   useEffect(() => {
-    if (endSeconds == null) return;
-
     const interval = window.setInterval(() => {
       const player = playerRef.current;
-      if (!player) return;
-      if (typeof player.getCurrentTime !== "function" || typeof player.pauseVideo !== "function") return;
-      const currentTime = player.getCurrentTime();
-      progressRef.current?.(currentTime);
-      if (!hasEndedRef.current && currentTime >= endSeconds) {
-        hasEndedRef.current = true;
-        player.pauseVideo();
-        endedRef.current?.();
-      }
-    }, 750);
+      if (!player || hasEndedRef.current) return;
+      enforceBounds(player);
+    }, 500);
 
     return () => window.clearInterval(interval);
-  }, [endSeconds, videoId, startSeconds]);
+  }, [videoId, startSeconds, endSeconds]);
 
   useEffect(() => {
-    if (endSeconds != null) return;
-
-    const interval = window.setInterval(() => {
-      const player = playerRef.current;
-      if (!player || typeof player.getCurrentTime !== "function") return;
-      progressRef.current?.(player.getCurrentTime());
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [endSeconds, videoId, startSeconds]);
-
-  useEffect(() => {
-    const player = playerRef.current;
     return () => {
-      player?.destroy();
+      try {
+        playerRef.current?.destroy();
+      } catch {
+        // ignore
+      }
       playerRef.current = null;
     };
   }, []);
 
   return (
     <div
-      className="overflow-hidden rounded-2xl bg-black shadow-[0_8px_40px_rgba(124,58,237,0.15)]"
+      className={cn("h-full w-full overflow-hidden bg-black", !theater && "rounded-2xl shadow-[0_8px_40px_rgba(124,58,237,0.15)]")}
       data-testid="youtube-section-player"
       data-youtube-id={videoId}
       data-start-seconds={startSeconds}
-      data-end-seconds={endSeconds ?? ""}
+      data-end-seconds={endSeconds}
     >
-      <div className="aspect-video">
-        <div id={containerId} title={title} className="h-full w-full" />
+      <div className={cn("relative w-full", theater ? "h-full min-h-[inherit]" : "aspect-video")}>
+        <div id={containerId} title={title} className="absolute inset-0 h-full w-full" />
         {!hasPlayer && !isReady ? (
           <iframe
-            className="h-full w-full"
+            className="absolute inset-0 h-full w-full"
             title={title}
-            src={`https://www.youtube.com/embed/${videoId}?start=${startSeconds}${endSeconds != null ? `&end=${endSeconds}` : ""}&rel=0&enablejsapi=1`}
+            src={`https://www.youtube.com/embed/${videoId}?start=${startSeconds}&end=${endSeconds}&rel=0&enablejsapi=1&modestbranding=1`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
           />

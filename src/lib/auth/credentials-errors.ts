@@ -19,3 +19,8 @@ export class LoginOAuthOnlyError extends CredentialsSignin {
 export class LoginSuspendedError extends CredentialsSignin {
   code = "account_suspended";
 }
+
+/** Байгууллага админаас зөвшөөрөгдөөгүй */
+export class LoginOrgPendingError extends CredentialsSignin {
+  code = "org_pending";
+}

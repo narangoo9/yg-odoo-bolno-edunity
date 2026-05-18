@@ -46,6 +46,7 @@ export function applyTokenToSession(session: Session, token: JWT) {
   }
   session.user.onboardingCompleted = Boolean(token.onboardingCompleted);
   session.user.profileComplete = Boolean(token.profileComplete);
+  session.user.orgApproved = token.orgApproved !== undefined ? Boolean(token.orgApproved) : true;
 
   return session;
 }

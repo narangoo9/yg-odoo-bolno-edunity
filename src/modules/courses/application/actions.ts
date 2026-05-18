@@ -118,7 +118,33 @@ export async function deleteCourse(id: string) {
 }
 
 export async function publishCourse(id: string) {
-  return updateCourse(id, { status: "PUBLISHED" });
+  const session = await auth();
+  if (!session?.user) throw new Error("Нэвтрэх шаардлагатай");
+
+  const course = await db.course.findUnique({
+    where: { id },
+    select: { id: true, title: true, status: true, instructor: { select: { name: true } } },
+  });
+  if (!course) return { error: "Курс олдсонгүй" };
+
+  if (session.user.role === "SUPER_ADMIN") {
+    return updateCourse(id, { status: "PUBLISHED" });
+  }
+
+  const result = await updateCourse(id, { status: "UNDER_REVIEW" });
+  if ("success" in result && result.success) {
+    const { notifyAdminCourseReview } = await import(
+      "@/modules/admin/application/moderation-actions"
+    );
+    notifyAdminCourseReview({
+      courseId: course.id,
+      courseTitle: course.title,
+      instructorName: course.instructor.name,
+    }).catch(() => null);
+    revalidatePath("/admin/courses");
+    return { success: true, pendingReview: true };
+  }
+  return result;
 }
 
 export async function unpublishCourse(id: string) {

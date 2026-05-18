@@ -19,6 +19,7 @@ declare module "next-auth" {
       organizationId: string | null;
       onboardingCompleted: boolean;
       profileComplete: boolean;
+      orgApproved: boolean;
     };
   }
 }
@@ -31,5 +32,6 @@ declare module "@auth/core/jwt" {
     organizationId: string | null;
     onboardingCompleted?: boolean;
     profileComplete?: boolean;
+    orgApproved?: boolean;
   }
 }

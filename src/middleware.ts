@@ -28,8 +28,17 @@ const PUBLIC_FILE = /\.(.*)$/;
 const VERIFICATION_ALLOWED_PREFIXES = [
   "/verify-email",
   "/onboarding",
+  "/org/pending",
   "/login",
   "/register",
+  "/api/auth",
+  "/api/v1/auth",
+];
+
+const ORG_PENDING_ALLOWED_PREFIXES = [
+  "/org/pending",
+  "/verify-email",
+  "/login",
   "/api/auth",
   "/api/v1/auth",
 ];
@@ -61,6 +70,10 @@ export default auth((req: NextRequest & { auth: { user?: { role?: string; status
 
   const role = session.user.role;
   const status = session.user.status;
+  const orgApproved =
+    role === "COMPANY"
+      ? Boolean((session.user as { orgApproved?: boolean }).orgApproved)
+      : true;
   const onboardingCompleted = Boolean(
     (session.user as { onboardingCompleted?: boolean }).onboardingCompleted,
   );
@@ -73,6 +86,14 @@ export default auth((req: NextRequest & { auth: { user?: { role?: string; status
     const allowed = VERIFICATION_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p));
     if (!allowed) {
       return NextResponse.redirect(new URL("/verify-email", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  if (role === "COMPANY" && !orgApproved) {
+    const allowed = ORG_PENDING_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p));
+    if (!allowed) {
+      return NextResponse.redirect(new URL("/org/pending", req.url));
     }
     return NextResponse.next();
   }
