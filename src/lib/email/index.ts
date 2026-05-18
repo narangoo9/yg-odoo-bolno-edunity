@@ -69,6 +69,18 @@ const templates: Record<string, (data: Record<string, unknown>) => { html: strin
     text: `${data.orgName} байгууллагын урилга: ${data.inviteUrl}`,
   }),
 
+  "support-request": (data) => ({
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
+        <h1 style="color:#1e293b;font-size:22px;margin-bottom:12px">Шинэ дэмжлэгийн хүсэлт</h1>
+        <p style="color:#64748b;margin:4px 0"><strong>Нэр:</strong> ${data.name}</p>
+        <p style="color:#64748b;margin:4px 0"><strong>Имэйл:</strong> ${data.email}</p>
+        <p style="color:#64748b;margin:4px 0"><strong>Сэдэв:</strong> ${data.topic}</p>
+        <p style="color:#334155;margin-top:16px;white-space:pre-wrap;line-height:1.6">${data.message}</p>
+      </div>`,
+    text: `Support from ${data.name} <${data.email}>\nTopic: ${data.topic}\n\n${data.message}`,
+  }),
+
   "certificate-ready": (data) => {
     const courseTitle = readString(data, "courseTitle") ?? "Сургалтын программ";
     const certUrl = readString(data, "certUrl");

@@ -45,7 +45,11 @@ export default auth((req: NextRequest & { auth: { user?: { role?: string; status
     return NextResponse.next();
   }
 
-  if (PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith("/courses/"))) {
+  if (
+    PUBLIC_ROUTES.some((r) => pathname === r) ||
+    pathname.startsWith("/courses/") ||
+    pathname.startsWith("/companies/")
+  ) {
     return NextResponse.next();
   }
 

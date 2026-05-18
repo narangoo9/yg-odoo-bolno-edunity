@@ -16,6 +16,7 @@ import {
   Send,
   Sparkles,
 } from "lucide-react";
+import { CourseProgressPanel } from "@/components/course/CourseProgressPanel";
 import { UpgradeModal } from "@/components/marketplace/UpgradeModal";
 import { YouTubeSectionPlayer } from "@/components/lesson/YouTubeSectionPlayer";
 import {
@@ -155,6 +156,19 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
   const chapters = useMemo(() => groupIntoChapters(sections), [sections]);
   const activeChapter = chapters.find((chapter) => chapter.sections.some((section) => section.id === activeSection?.id));
   const watchedPercent = sections.length > 0 ? Math.round((completedSections.size / sections.length) * 100) : 0;
+  const peerReviewPending = useMemo(
+    () =>
+      Object.values(taskSubmissions).some(
+        (s) => s.status === "SUBMITTED" || s.status === "PENDING_REVIEW",
+      ),
+    [taskSubmissions],
+  );
+  const allSectionsComplete = sections.length > 0 && completedSections.size >= sections.length;
+  const gradedTasks = Object.values(taskSubmissions).filter((s) => s.status === "GRADED").length;
+  const certificateReadiness = Math.min(
+    100,
+    Math.round(watchedPercent * 0.5 + (gradedTasks > 0 ? 25 : 0) + (certificate ? 25 : 0)),
+  );
   const allowedSectionCount = getAllowedLearningItemCount(accessPlan, sections.length);
   const estimatedDuration = formatSeconds(sections.at(-1)?.endSeconds ?? sections.at(-1)?.startSeconds ?? 0);
   const activeTaskState = taskStates[activeSection?.id ?? ""] ?? "not-started";
@@ -483,6 +497,24 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
           </div>
         </div>
       </header>
+
+      <CourseProgressPanel
+        courseId={course.id}
+        courseTitle={course.title}
+        completedCount={completedSections.size}
+        totalLessons={sections.length}
+        watchPercent={watchedPercent}
+        nextLesson={nextSection ? { id: nextSection.id, title: nextSection.title } : null}
+        certificateReadiness={certificateReadiness}
+        allLessonsComplete={allSectionsComplete}
+        peerReviewPending={peerReviewPending}
+        finalTaskRemaining={!allSectionsComplete && activeIndex >= sections.length - 2}
+        lessonsWatched={allSectionsComplete}
+        tasksComplete={gradedTasks > 0 || Object.keys(taskSubmissions).length > 0}
+        projectSubmitted={allSectionsComplete}
+        peerReviewPassed={allSectionsComplete && !peerReviewPending}
+        certificateUnlocked={Boolean(certificate)}
+      />
 
       {/* ── Body ── */}
       <div

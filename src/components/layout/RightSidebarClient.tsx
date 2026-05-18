@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/index";
 import { getInitials, cn } from "@/lib/utils";
 import { MascotImage } from "@/components/brand/MascotImage";
 import { GettingStartedChecklist } from "@/components/onboarding/GettingStartedChecklist";
+import type { ServerOnboardingProgress } from "@/lib/onboarding/onboardingUtils";
 
 interface WeekDay {
   label: string; date: number; active: boolean; isToday: boolean;
@@ -30,6 +31,7 @@ interface Props {
   activeEnrollments: Enrollment[];
   completedEnrollments: Enrollment[];
   inProgressCourses: Enrollment[];
+  serverOnboarding?: ServerOnboardingProgress;
 }
 
 // ── AI MENTOR CARD ─────────────────────────────────────────────────────────────
@@ -105,7 +107,7 @@ function AIMentorCard({ firstName }: { firstName: string }) {
 
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────────
 export function RightSidebarClient({
-  user, leaderboard, week, weeklyXp, goalsThisMonth,
+  user, leaderboard, week, weeklyXp, goalsThisMonth, serverOnboarding,
 }: Props) {
   const [collapsed,  setCollapsed]  = useState(false);
   const activeDaysCount = week.filter(d => d.active).length;
@@ -252,7 +254,7 @@ export function RightSidebarClient({
             </div>
 
             {/* ── GETTING STARTED ── */}
-            <GettingStartedChecklist />
+            <GettingStartedChecklist serverProgress={serverOnboarding} />
 
             {/* ── AI MENTOR ── */}
             <AIMentorCard firstName={firstName} />

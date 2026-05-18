@@ -6,10 +6,18 @@ import { RightSidebarClient } from "./RightSidebarClient";
 const getCachedSidebarData = (userId: string) =>
   unstable_cache(
     async () => {
-      const [user, leaderboard, enrollments] = await Promise.all([
+      const [user, leaderboard, enrollments, certificates, completedLessons] = await Promise.all([
         db.user.findUnique({
           where: { id: userId },
-          select: { name: true, avatarUrl: true, xp: true, level: true, streak: true, email: true },
+          select: {
+            name: true,
+            avatarUrl: true,
+            xp: true,
+            level: true,
+            streak: true,
+            email: true,
+            onboardingCompleted: true,
+          },
         }),
         db.leaderboardEntry.findUnique({
           where: { userId },
@@ -30,9 +38,11 @@ const getCachedSidebarData = (userId: string) =>
           orderBy: { enrolledAt: "desc" },
           take: 8,
         }),
+        db.certificate.count({ where: { studentId: userId } }),
+        db.progress.count({ where: { studentId: userId, isCompleted: true } }),
       ]);
 
-      return { user, leaderboard, enrollments };
+      return { user, leaderboard, enrollments, certificates, completedLessons };
     },
     [`right-sidebar-${userId}`],
     {
@@ -42,11 +52,14 @@ const getCachedSidebarData = (userId: string) =>
   )();
 
 export async function RightSidebar({ userId }: { userId: string }) {
-  const { user, leaderboard, enrollments } = await getCachedSidebarData(userId).catch(() => ({
-    user: null,
-    leaderboard: null,
-    enrollments: [],
-  }));
+  const { user, leaderboard, enrollments, certificates, completedLessons } =
+    await getCachedSidebarData(userId).catch(() => ({
+      user: null,
+      leaderboard: null,
+      enrollments: [],
+      certificates: 0,
+      completedLessons: 0,
+    }));
 
   if (!user) return null;
 
@@ -84,6 +97,13 @@ export async function RightSidebar({ userId }: { userId: string }) {
       activeEnrollments={activeEnrollments}
       completedEnrollments={completedEnrollments}
       inProgressCourses={inProgressCourses}
+      serverOnboarding={{
+        onboardingCompleted: user.onboardingCompleted,
+        enrolledCourses: enrollments.length,
+        completedLessons,
+        certificates,
+        hasCustomAvatar: Boolean(user.avatarUrl),
+      }}
     />
   );
 }

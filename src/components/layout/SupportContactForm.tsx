@@ -7,12 +7,38 @@ export function SupportContactForm() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setLoading(false);
-    setSubmitted(true);
+    setError(null);
+
+    const form = e.currentTarget;
+    const payload = {
+      name: (form.elements.namedItem("name") as HTMLInputElement).value.trim(),
+      email: (form.elements.namedItem("email") as HTMLInputElement).value.trim(),
+      topic: (form.elements.namedItem("topic") as HTMLSelectElement).value,
+      message: (form.elements.namedItem("message") as HTMLTextAreaElement).value.trim(),
+    };
+
+    try {
+      const res = await fetch("/api/v1/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Илгээхэд алдаа гарлаа.");
+        return;
+      }
+      setSubmitted(true);
+    } catch {
+      setError("Сүлжээний алдаа. Дахин оролдоно уу.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (submitted) {
@@ -86,6 +112,11 @@ export function SupportContactForm() {
             placeholder="Асуудлаа тодорхой бичнэ үү..."
           />
         </div>
+        {error ? (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600 dark:border-red-800/40 dark:bg-red-950/30 dark:text-red-300">
+            {error}
+          </p>
+        ) : null}
         <button
           type="submit"
           disabled={loading}

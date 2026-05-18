@@ -55,7 +55,7 @@ const getCachedStudentDashboardData = (studentId: string) =>
         .slice(0, 2)
         .map((e) => e.courseId);
 
-      const [progressData, moduleData] = await Promise.all([
+      const [progressData, moduleData, peerReviewCompleted] = await Promise.all([
         inProgressIds.length > 0
           ? db.progress.groupBy({
               by: ["courseId"],
@@ -69,9 +69,12 @@ const getCachedStudentDashboardData = (studentId: string) =>
               select: { courseId: true, _count: { select: { lessons: true } } },
             })
           : Promise.resolve([] as { courseId: string; _count: { lessons: number } }[]),
+        db.courseSectionTaskSubmission.count({
+          where: { studentId, status: "GRADED" },
+        }),
       ]);
 
-      return { stats, enrollments, subscription, progressData, moduleData };
+      return { stats, enrollments, subscription, progressData, moduleData, peerReviewCompleted };
     },
     [`student-dashboard-${studentId}`],
     {
@@ -167,6 +170,7 @@ export default async function StudentDashboardPage({ searchParams }: PageProps) 
   const subscription = dashboardData?.subscription ?? null;
   const progressData = dashboardData?.progressData ?? [];
   const moduleData = dashboardData?.moduleData ?? [];
+  const peerReviewCompleted = dashboardData?.peerReviewCompleted ?? 0;
 
   // Off-path: only on Stripe return with success param do we touch Stripe.
   if (sp?.subscription === "success" && (!subscription || subscription.status !== "ACTIVE")) {
@@ -251,6 +255,7 @@ export default async function StudentDashboardPage({ searchParams }: PageProps) 
           completedCourses: stats.completedCourses,
           certificates: stats.certificates,
           quizAttempts: stats.quizAttempts,
+          peerReviewCompleted: peerReviewCompleted > 0,
         }}
         continueHref={
           inProgress[0]

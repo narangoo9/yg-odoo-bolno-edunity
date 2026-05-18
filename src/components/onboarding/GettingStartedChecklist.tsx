@@ -6,17 +6,25 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronRight, PartyPopper, Rocket } from "lucide-react";
 import { MascotImage } from "@/components/brand/MascotImage";
 import { useOnboardingStore } from "@/lib/onboarding/onboardingStore";
-import { buildChecklistItems, getContinueOnboardingRoute } from "@/lib/onboarding/onboardingUtils";
+import {
+  buildChecklistItems,
+  getContinueOnboardingRoute,
+  type ServerOnboardingProgress,
+} from "@/lib/onboarding/onboardingUtils";
 import { cn } from "@/lib/utils";
 
-export function GettingStartedChecklist() {
+export function GettingStartedChecklist({
+  serverProgress,
+}: {
+  serverProgress?: ServerOnboardingProgress;
+}) {
   const store = useOnboardingStore();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
   if (!mounted) return null;
 
-  const items = buildChecklistItems(store);
+  const items = buildChecklistItems(store, serverProgress);
   const completedCount = items.filter((i) => i.completed).length;
   const totalCount = items.length;
   const percentage = Math.round((completedCount / totalCount) * 100);

@@ -51,6 +51,8 @@ export type JourneyStats = {
   completedCourses: number;
   certificates: number;
   quizAttempts: number;
+  peerReviewCompleted?: boolean;
+  onboardingCompleted?: boolean;
 };
 
 export type JourneyStepState = JourneyStep & {
@@ -68,7 +70,7 @@ export function buildLearningJourney(stats: JourneyStats): {
   if (stats.completedLessons > 0) completed.add("watch_lessons");
   if (stats.quizAttempts > 0 || stats.completedLessons >= 3) completed.add("complete_tasks");
   if (stats.completedCourses > 0 || stats.completedLessons >= 8) completed.add("submit_project");
-  if (stats.completedCourses > 0) completed.add("peer_review");
+  if (stats.peerReviewCompleted || stats.completedCourses > 0) completed.add("peer_review");
   if (stats.certificates > 0) completed.add("earn_certificate");
 
   const ordered = LEARNING_JOURNEY_STEPS.map((s) => s.id);

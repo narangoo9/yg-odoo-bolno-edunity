@@ -1,12 +1,31 @@
 import type { OnboardingState, GettingStartedItem } from "./onboardingTypes";
 import { GETTING_STARTED_ITEMS } from "./onboardingTypes";
 
+export type ServerOnboardingProgress = {
+  onboardingCompleted?: boolean;
+  enrolledCourses?: number;
+  completedLessons?: number;
+  certificates?: number;
+  hasCustomAvatar?: boolean;
+};
+
 export function buildChecklistItems(
-  state: Pick<OnboardingState, "completedSteps">
+  state: Pick<OnboardingState, "completedSteps">,
+  server?: ServerOnboardingProgress,
 ): GettingStartedItem[] {
+  const serverDone: Record<string, boolean> = {
+    accountCreated: true,
+    loggedIn: true,
+    goalSelected: Boolean(server?.onboardingCompleted),
+    firstCourseStarted: (server?.enrolledCourses ?? 0) > 0,
+    firstLessonCompleted: (server?.completedLessons ?? 0) > 0,
+    profileCustomized: Boolean(server?.hasCustomAvatar),
+    firstCertificateEarned: (server?.certificates ?? 0) > 0,
+  };
+
   return GETTING_STARTED_ITEMS.map((item) => ({
     ...item,
-    completed: state.completedSteps.includes(item.id),
+    completed: state.completedSteps.includes(item.id) || Boolean(serverDone[item.id]),
   }));
 }
 

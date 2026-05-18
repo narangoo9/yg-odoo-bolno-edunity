@@ -12,6 +12,10 @@ import { formatDistanceToNow } from "date-fns";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { MascotImage } from "@/components/brand/MascotImage";
 import {
+  ChatConnectionStatus,
+  type ChatConnectionState,
+} from "@/components/chat/ChatConnectionStatus";
+import {
   createSupabaseRealtimeClient,
   type ChatMessageRow,
 } from "@/lib/supabase/client";
@@ -361,6 +365,7 @@ export function MessagesClient({
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [messageReactions, setMessageReactions] = useState<Record<string, Reaction[]>>({});
   const [chatError, setChatError] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<ChatConnectionState>("connecting");
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [typingUserIds, setTypingUserIds] = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -445,6 +450,7 @@ export function MessagesClient({
       try {
         const conversationId = activeConversationId;
         setChatError(null);
+        setConnectionState("connecting");
         try {
           const loadedMessages = await loadMessages(activeCourseId, conversationId);
           if (cancelled) return;
@@ -489,18 +495,24 @@ export function MessagesClient({
             if (!channel) return;
             setOnlineUserIds(new Set(Object.keys(channel.presenceState())));
           })
-          .subscribe(status => {
+          .subscribe((status) => {
             if (status === "SUBSCRIBED") {
+              setConnectionState("connected");
               channel?.track({ userId: currentChatUserId, onlineAt: new Date().toISOString() });
             }
             if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-              setChatError("Realtime chat connection failed. Messages will continue syncing shortly.");
+              setConnectionState("disconnected");
+              setChatError("Холболт тасарсан. Мессежүүд түр хугацаанд синк хийгдэнэ.");
+            }
+            if (status === "CLOSED") {
+              setConnectionState("disconnected");
             }
           });
 
         realtimeChannelRef.current = channel;
       } catch (error) {
         if (!cancelled) {
+          setConnectionState("disconnected");
           setChatError(error instanceof Error ? error.message : "Realtime chat failed.");
         }
       }
@@ -834,6 +846,8 @@ export function MessagesClient({
                 </button>
               </div>
             </div>
+
+            <ChatConnectionStatus state={connectionState} />
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
