@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cached } from "@/lib/cache";
+import { getLiveLeaderboardRank, LEADERBOARD_USER_WHERE } from "@/lib/leaderboard/ranks";
 import { ok, unauthorized, serverError } from "@/shared/utils/api-response";
 
 const leaderboardEntrySelect = {
@@ -29,33 +30,28 @@ export async function GET(req: NextRequest) {
 
     // Top N жагсаалт — cache-тай (60 секунд)
     const entries = await cached(
-      `leaderboard:${type}:${limit}`,
+      `leaderboard:${type}:${limit}:v2`,
       60,
       async () => {
         const leaderboardEntries = await db.leaderboardEntry.findMany({
-          take: Math.min(limit * 2, 200),
+          where: { user: LEADERBOARD_USER_WHERE },
+          take: limit,
           orderBy: { [orderField]: "desc" },
-          select: leaderboardEntrySelect,
-        });
-
-        const users = await db.user.findMany({
-          where: { id: { in: [...new Set(leaderboardEntries.map((entry) => entry.userId))] } },
           select: {
-            id: true,
-            name: true,
-            avatarUrl: true,
-            streak: true,
-            level: true,
+            ...leaderboardEntrySelect,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatarUrl: true,
+                streak: true,
+                level: true,
+              },
+            },
           },
         });
-        const usersById = new Map(users.map((user) => [user.id, user]));
 
-        return leaderboardEntries
-          .flatMap((entry) => {
-            const user = usersById.get(entry.userId);
-            return user ? [{ ...entry, user }] : [];
-          })
-          .slice(0, limit);
+        return leaderboardEntries;
       }
     );
 
@@ -77,18 +73,12 @@ export async function GET(req: NextRequest) {
     let myXp = meInTop?.xp ?? 0;
 
     if (!meInTop) {
-      // Нэг л DB query — count + myEntry нэгтгэв
-      const myEntry = await db.leaderboardEntry.findUnique({
-        where: { userId: session.user.id },
-        select: { totalXp: true, weeklyXp: true, monthlyXp: true },
-      });
-
-      if (myEntry) {
-        myXp = myEntry[orderField as keyof typeof myEntry] as number;
-        myRank =
-          (await db.leaderboardEntry.count({
-            where: { [orderField]: { gt: myXp } },
-          })) + 1;
+      const field =
+        type === "weekly" ? "weeklyXp" : type === "monthly" ? "monthlyXp" : "totalXp";
+      const live = await getLiveLeaderboardRank(session.user.id, field);
+      if (live) {
+        myXp = live.xp;
+        myRank = live.rank;
       }
     }
 

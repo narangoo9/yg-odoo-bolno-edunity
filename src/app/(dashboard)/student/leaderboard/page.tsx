@@ -9,6 +9,7 @@ import {
   getCachedGlobalLeaderboard,
   getCachedWeeklyLeaderboard,
 } from "@/lib/leaderboard/cached-leaderboard";
+import { getLiveLeaderboardRank, LEADERBOARD_USER_WHERE } from "@/lib/leaderboard/ranks";
 
 function isMissingFriendshipsTable(error: unknown) {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -84,54 +85,45 @@ async function getLeaderboardEntriesForUsers(userIds: string[]) {
   const ids = [...new Set(userIds)];
   if (ids.length === 0) return [];
 
-  const [entries, users] = await Promise.all([
-    db.leaderboardEntry.findMany({
-      where: { userId: { in: ids } },
-      select: {
-        id: true,
-        userId: true,
-        weeklyXp: true,
-        monthlyXp: true,
-        totalXp: true,
-        rank: true,
-        weeklyRank: true,
-        updatedAt: true,
+  const entries = await db.leaderboardEntry.findMany({
+    where: { userId: { in: ids }, user: LEADERBOARD_USER_WHERE },
+    select: {
+      id: true,
+      userId: true,
+      weeklyXp: true,
+      monthlyXp: true,
+      totalXp: true,
+      updatedAt: true,
+      user: {
+        select: { id: true, name: true, avatarUrl: true, streak: true, level: true },
       },
-    }),
-    db.user.findMany({
-      where: { id: { in: ids } },
-      select: { id: true, name: true, avatarUrl: true, streak: true, level: true },
-    }),
-  ]);
-  const usersById = new Map(users.map((user) => [user.id, user]));
+    },
+    orderBy: { totalXp: "desc" },
+  });
 
-  return entries
-    .flatMap((entry) => {
-      const user = usersById.get(entry.userId);
-      return user ? [{ ...entry, user }] : [];
-    })
-    .sort((a, b) => b.totalXp - a.totalXp);
+  return entries.map((entry, index) => ({
+    ...entry,
+    rank: index + 1,
+    weeklyRank: index + 1,
+  }));
 }
 
 async function getMyLeaderboardEntry(userId: string) {
-  const myEntry = await db.leaderboardEntry.findUnique({
-    where: { userId },
-    select: { rank: true, weeklyXp: true, monthlyXp: true, totalXp: true, weeklyRank: true },
-  });
-
-  const totalXp = myEntry?.totalXp ?? 0;
-  const weeklyXp = myEntry?.weeklyXp ?? 0;
-  const [rank, weeklyRank] = await Promise.all([
-    db.leaderboardEntry.count({ where: { totalXp: { gt: totalXp } } }),
-    db.leaderboardEntry.count({ where: { weeklyXp: { gt: weeklyXp } } }),
+  const [globalLive, weeklyLive, entry] = await Promise.all([
+    getLiveLeaderboardRank(userId, "totalXp"),
+    getLiveLeaderboardRank(userId, "weeklyXp"),
+    db.leaderboardEntry.findUnique({
+      where: { userId },
+      select: { monthlyXp: true },
+    }),
   ]);
 
   return {
-    rank: rank + 1,
-    weeklyXp,
-    monthlyXp: myEntry?.monthlyXp ?? 0,
-    totalXp,
-    weeklyRank: weeklyRank + 1,
+    rank: globalLive?.rank ?? null,
+    weeklyXp: weeklyLive?.xp ?? 0,
+    monthlyXp: entry?.monthlyXp ?? 0,
+    totalXp: globalLive?.xp ?? 0,
+    weeklyRank: weeklyLive?.rank ?? null,
   };
 }
 
@@ -147,11 +139,11 @@ export default async function LeaderboardPage() {
     getAcceptedFriendships(session.user.id),
   ]);
 
-  // Build global leaderboard with rank numbers
-  const globalRanked = globalEntries.map((e, idx) => ({ ...e, rank: idx + 1 }));
-
-  // Weekly leaderboard
-  const weeklyRanked = weeklyEntries.map((e, idx) => ({ ...e, weeklyRank: idx + 1 }));
+  const globalRanked = globalEntries;
+  const weeklyRanked = weeklyEntries.map((e) => ({
+    ...e,
+    weeklyRank: e.rank,
+  }));
 
   // Friends leaderboard
   const friendIds = new Set(

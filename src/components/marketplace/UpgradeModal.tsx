@@ -7,35 +7,35 @@ import { cn } from "@/lib/utils";
 interface UpgradeModalProps {
   open: boolean;
   reason?: string;
-  requiredPlan?: "STANDARD" | "PRO";
+  requiredPlan?: "PREMIUM" | "PRO";
   onClose: () => void;
 }
 
 const plans = [
   {
-    id: "FREE",
-    name: "Free",
-    price: "0₮",
-    tone: "border-slate-200 bg-white",
-    features: ["First lesson only", "5 AI credits", "Basic XP", "Certificate locked"],
-  },
-  {
     id: "STANDARD",
     name: "Standard",
-    price: "9,900₮ / сар",
+    price: "Үнэгүй",
+    tone: "border-slate-200 bg-white",
+    features: ["Эхний section (урьдчилсан харалт)", "Community chat", "Үндсэн ахиц"],
+  },
+  {
+    id: "PREMIUM",
+    name: "Premium",
+    price: "₮9,900 / сар",
     tone: "border-violet-300 bg-violet-50",
-    features: ["First 5 lessons or 50% unlock", "100 AI credits/month", "Tasks + notes", "XP boost x1.2"],
+    features: ["Курсын 50% нээлт", "AI туслах", "Peer review", "Сертификат татах"],
   },
   {
     id: "PRO",
     name: "Pro",
-    price: "19,900₮ / сар",
+    price: "₮19,900 / сар",
     tone: "border-fuchsia-300 bg-fuchsia-50",
-    features: ["Full company access", "500 AI credits/month", "Final project + peer review", "Certificate included"],
+    features: ["100% курс нээлт", "Дэвшилтэт AI", "Career tools", "Бүрэн сертификат"],
   },
 ];
 
-export function UpgradeModal({ open, reason, requiredPlan = "STANDARD", onClose }: UpgradeModalProps) {
+export function UpgradeModal({ open, reason, requiredPlan = "PREMIUM", onClose }: UpgradeModalProps) {
   if (!open) return null;
 
   return (
@@ -88,9 +88,9 @@ export function UpgradeModal({ open, reason, requiredPlan = "STANDARD", onClose 
                     </p>
                   ))}
                 </div>
-                {plan.id !== "FREE" ? (
+                {plan.id !== "STANDARD" ? (
                   <Link
-                    href={`/student/upgrade?plan=${plan.id === "STANDARD" ? "PREMIUM" : plan.id}`}
+                    href={`/student/upgrade?plan=${plan.id}`}
                     className={cn(
                       "mt-4 inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-black text-white transition-colors",
                       plan.id === "PRO" ? "bg-fuchsia-600 hover:bg-fuchsia-500" : "bg-violet-600 hover:bg-violet-500",

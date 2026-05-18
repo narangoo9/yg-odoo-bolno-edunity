@@ -245,7 +245,7 @@ export function getSavedCourseLimit(plan: PlanId | string): number | null {
 /**
  * Lesson / section access within a course (0-based index).
  * - PRO: all items
- * - PREMIUM: ~75% of items
+ * - PREMIUM: first 50% of items
  * - STANDARD: intro only (first item + free-marked)
  */
 export function canAccessLearningItem(
@@ -258,8 +258,17 @@ export function canAccessLearningItem(
   if (isFreeItem) return true;
   const id = typeof plan === "string" ? normalizePlanId(plan) : plan;
   if (id === "PRO") return true;
-  if (id === "PREMIUM") return index < Math.ceil(totalItems * 0.75);
+  if (id === "PREMIUM") return index < Math.ceil(totalItems * 0.5);
   return index === 0;
+}
+
+/** First section/lesson index the user may open (0-based). */
+export function getMaxAccessibleIndex(plan: PlanId | string, totalItems: number): number {
+  if (totalItems <= 0) return -1;
+  const id = typeof plan === "string" ? normalizePlanId(plan) : plan;
+  if (id === "PRO") return totalItems - 1;
+  if (id === "PREMIUM") return Math.max(0, Math.ceil(totalItems * 0.5) - 1);
+  return 0;
 }
 
 export function canAccessLesson(

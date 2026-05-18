@@ -5,6 +5,7 @@ import { BadgeType, XpAction } from "@prisma/client";
 import { invalidateCache, redis } from "@/lib/cache";
 import { revalidatePath } from "next/cache";
 import { revalidateUserDashboard, revalidateUserSidebar } from "@/lib/dashboard-cache";
+import { LEADERBOARD_USER_WHERE } from "@/lib/leaderboard/ranks";
 
 // ── XP тооцооны тогтмолууд ──────────────────────────────────────────
 export const XP_REWARDS: Record<XpAction, number> = {
@@ -175,7 +176,7 @@ async function checkAndAwardBadges(
   // TOP_10 badge — leaderboard rank шалгах
   if (!existingSet.has(BadgeType.TOP_10)) {
     const rank = await db.leaderboardEntry.count({
-      where: { totalXp: { gt: totalXp } },
+      where: { totalXp: { gt: totalXp }, user: LEADERBOARD_USER_WHERE },
     });
     if (rank < 10) toCheck.push({ badge: BadgeType.TOP_10, condition: true });
   }

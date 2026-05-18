@@ -110,12 +110,31 @@ function statusText(status: TaskState) {
 
 function planLabel(plan: MarketplacePlan) {
   if (plan === "PRO") return "Pro";
-  if (plan === "STANDARD") return "Standard";
-  return "Free";
+  if (plan === "PREMIUM") return "Premium";
+  return "Standard";
+}
+
+function planUnlockHint(plan: MarketplacePlan) {
+  if (plan === "PRO") return "100% sections unlocked";
+  if (plan === "PREMIUM") return "50% sections unlocked";
+  return "Intro preview only";
 }
 
 function sectionRange(section: CourseSection) {
   return `${formatSeconds(section.startSeconds)}${section.endSeconds != null ? ` - ${formatSeconds(section.endSeconds)}` : ""}`;
+}
+
+function firstAccessibleSectionId(sections: CourseSection[], accessPlan: MarketplacePlan) {
+  for (let index = 0; index < sections.length; index++) {
+    if (canAccessLearningItem(accessPlan, index, sections.length)) {
+      return sections[index]!.id;
+    }
+  }
+  return sections[0]?.id ?? "";
+}
+
+function sectionIndexOf(sections: CourseSection[], sectionId: string) {
+  return sections.findIndex((section) => section.id === sectionId);
 }
 
 export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) {
@@ -131,7 +150,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     [course.sections],
   );
 
-  const [activeId, setActiveId] = useState(sections[0]?.id ?? "");
+  const [activeId, setActiveId] = useState(() => firstAccessibleSectionId(sections, accessPlan));
   const [openChapterId, setOpenChapterId] = useState("chapter-1");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<TabId>("overview");
@@ -208,6 +227,20 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   useEffect(() => {
     if (activeChapter) setOpenChapterId(activeChapter.id);
   }, [activeChapter]);
+
+  // Keep playback on an accessible section when plan changes or state drifts
+  useEffect(() => {
+    const index = sectionIndexOf(sections, activeId);
+    if (index < 0 || canAccessLearningItem(accessPlan, index, sections.length)) return;
+    const fallbackId = firstAccessibleSectionId(sections, accessPlan);
+    if (fallbackId && fallbackId !== activeId) {
+      const fallback = sections.find((section) => section.id === fallbackId);
+      if (fallback) {
+        setActiveId(fallbackId);
+        setCurrentSeconds(fallback.startSeconds);
+      }
+    }
+  }, [accessPlan, activeId, sections]);
 
   // Load DB state on mount; fall back to localStorage if API fails
   useEffect(() => {
@@ -340,6 +373,9 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     .filter((chapter) => chapter.sections.length > 0);
 
   const completeActiveSection = () => {
+    const index = sectionIndexOf(sections, activeSection.id);
+    if (!canAccessLearningItem(accessPlan, index, sections.length)) return;
+
     setCompletedSections((current) => new Set([...current, activeSection.id]));
     setTaskStates((current) => {
       const currentState = current[activeSection.id];
@@ -445,13 +481,13 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   };
 
   const selectSection = (section: CourseSection, seconds = section.startSeconds) => {
-    const sectionIndex = sections.findIndex((item) => item.id === section.id);
+    const sectionIndex = sectionIndexOf(sections, section.id);
     if (!canAccessLearningItem(accessPlan, sectionIndex, sections.length)) {
       const requiredPlan = getRequiredPlanForIndex(sectionIndex, sections.length);
       setUpgradeReason(
         requiredPlan === "PRO"
-          ? "This section requires Pro access. Upgrade to unlock the full course, final tasks, reviews, and certificate."
-          : "Your free preview is finished. Upgrade to Standard or Pro to continue the course.",
+          ? "Энэ хэсэг Pro багцад нээгдэнэ. 100% хандалт авахын тулд Pro руу шилжинэ үү."
+          : "Үнэгүй урьдчилсан харалт дууслаа. Premium аваад курсын 50%-ийг нээнэ үү.",
       );
       return;
     }
@@ -756,7 +792,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                     {planLabel(accessPlan)}
                   </p>
                   <p className="mt-0.5 text-[12px] text-slate-500">
-                    {allowedSectionCount}/{sections.length} sections unlocked
+                    {planUnlockHint(accessPlan)} · {allowedSectionCount}/{sections.length}
                   </p>
                 </div>
               </div>
@@ -934,13 +970,34 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                           : "Энэ course-ийн сүүлийн section. Peer reviews дуусахад certificate шалгана."
                         : "Video дууссаны дараа task илгээж байж дараагийн алхам бүрэн хаагдана."}
                     </p>
-                    {nextSection ? (
+                    {nextSection &&
+                    canAccessLearningItem(
+                      accessPlan,
+                      sectionIndexOf(sections, nextSection.id),
+                      sections.length,
+                    ) ? (
                       <button
                         type="button"
                         onClick={() => selectSection(nextSection)}
                         className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-[13px] font-black text-white hover:bg-slate-800"
                       >
                         <Play size={14} /> Next section
+                      </button>
+                    ) : nextSection ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const idx = sectionIndexOf(sections, nextSection.id);
+                          const required = getRequiredPlanForIndex(idx, sections.length);
+                          setUpgradeReason(
+                            required === "PRO"
+                              ? "Энэ хэсэг Pro багцад нээгдэнэ. 100% хандалт авахын тулд Pro руу шилжинэ үү."
+                              : "Premium аваад курсын 50%-ийг үргэлжлүүлэн үзнэ үү.",
+                          );
+                        }}
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-black text-white hover:bg-violet-500"
+                      >
+                        <Lock size={14} /> Upgrade to continue
                       </button>
                     ) : null}
                     <a
@@ -1012,7 +1069,13 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
       <UpgradeModal
         open={upgradeReason != null}
         reason={upgradeReason ?? undefined}
-        requiredPlan={upgradeReason?.includes("Pro") ? "PRO" : "STANDARD"}
+        requiredPlan={
+          upgradeReason?.includes("Pro")
+            ? "PRO"
+            : upgradeReason?.includes("Premium")
+              ? "PREMIUM"
+              : "PREMIUM"
+        }
         onClose={() => setUpgradeReason(null)}
       />
     </div>

@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
+import { LEADERBOARD_USER_WHERE } from "@/lib/leaderboard/ranks";
 
 const LEADERBOARD_TAG = "leaderboard";
 
@@ -9,8 +10,8 @@ export type LeaderboardRow = {
   weeklyXp: number;
   monthlyXp: number;
   totalXp: number;
-  rank: number | null;
-  weeklyRank: number | null;
+  rank: number;
+  weeklyRank: number;
   updatedAt: Date;
   user: {
     id: string;
@@ -23,43 +24,40 @@ export type LeaderboardRow = {
 
 async function fetchLeaderboard(orderField: "totalXp" | "weeklyXp"): Promise<LeaderboardRow[]> {
   const entries = await db.leaderboardEntry.findMany({
-    take: 100,
+    where: { user: LEADERBOARD_USER_WHERE },
     orderBy: { [orderField]: "desc" },
+    take: 100,
     select: {
       id: true,
       userId: true,
       weeklyXp: true,
       monthlyXp: true,
       totalXp: true,
-      rank: true,
-      weeklyRank: true,
       updatedAt: true,
+      user: {
+        select: { id: true, name: true, avatarUrl: true, streak: true, level: true },
+      },
     },
   });
 
-  const users = await db.user.findMany({
-    where: { id: { in: [...new Set(entries.map((entry) => entry.userId))] } },
-    select: { id: true, name: true, avatarUrl: true, streak: true, level: true },
-  });
-  const usersById = new Map(users.map((user) => [user.id, user]));
-
   return entries
-    .flatMap((entry) => {
-      const user = usersById.get(entry.userId);
-      return user ? [{ ...entry, user }] : [];
-    })
-    .slice(0, 50);
+    .slice(0, 50)
+    .map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+      weeklyRank: index + 1,
+    }));
 }
 
 export function getCachedGlobalLeaderboard() {
-  return unstable_cache(() => fetchLeaderboard("totalXp"), ["leaderboard-global"], {
+  return unstable_cache(() => fetchLeaderboard("totalXp"), ["leaderboard-global-v2"], {
     revalidate: 30,
     tags: [LEADERBOARD_TAG],
   })();
 }
 
 export function getCachedWeeklyLeaderboard() {
-  return unstable_cache(() => fetchLeaderboard("weeklyXp"), ["leaderboard-weekly"], {
+  return unstable_cache(() => fetchLeaderboard("weeklyXp"), ["leaderboard-weekly-v2"], {
     revalidate: 30,
     tags: [LEADERBOARD_TAG],
   })();

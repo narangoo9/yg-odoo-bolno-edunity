@@ -37,14 +37,15 @@ export async function POST(req: NextRequest) {
     if (!enrollment) return forbidden("Бүртгэл олдсонгүй");
 
     // Verify section belongs to course and user can access it
-    const section = await db.courseSection.findFirst({
-      where: { id: sectionId, courseId },
-      select: { id: true, order: true },
+    const orderedSections = await db.courseSection.findMany({
+      where: { courseId },
+      select: { id: true },
+      orderBy: [{ order: "asc" }, { startSeconds: "asc" }],
     });
-    if (!section) return badRequest("Section олдсонгүй");
+    const sectionIndex = orderedSections.findIndex((s) => s.id === sectionId);
+    if (sectionIndex < 0) return badRequest("Section олдсонгүй");
 
-    const totalSections = await db.courseSection.count({ where: { courseId } });
-    const sectionIndex = section.order - 1; // order is 1-based
+    const totalSections = orderedSections.length;
     const plan = getMarketplacePlan(subscription?.plan, subscription?.status);
 
     if (!canAccessLearningItem(plan, sectionIndex, totalSections)) {

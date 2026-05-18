@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { unstable_cache } from "next/cache";
 import { dashboardCacheTags } from "@/lib/dashboard-cache";
+import { getLiveLeaderboardRank } from "@/lib/leaderboard/ranks";
 import { RightSidebarClient } from "./RightSidebarClient";
 
 const getCachedSidebarData = (userId: string) =>
@@ -63,6 +64,12 @@ export async function RightSidebar({ userId }: { userId: string }) {
 
   if (!user) return null;
 
+  const liveRank = await getLiveLeaderboardRank(userId, "totalXp");
+  const sidebarLeaderboard = {
+    rank: liveRank?.rank ?? null,
+    weeklyXp: leaderboard?.weeklyXp ?? 0,
+  };
+
   const activeEnrollments = enrollments.filter((e) => e.status !== "COMPLETED");
   const completedEnrollments = enrollments.filter((e) => e.status === "COMPLETED");
   const inProgressCourses = activeEnrollments.slice(0, 3);
@@ -89,7 +96,7 @@ export async function RightSidebar({ userId }: { userId: string }) {
   return (
     <RightSidebarClient
       user={user}
-      leaderboard={leaderboard}
+      leaderboard={sidebarLeaderboard}
       enrollments={enrollments}
       week={week}
       weeklyXp={leaderboard?.weeklyXp ?? 0}
