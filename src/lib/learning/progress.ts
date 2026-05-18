@@ -183,6 +183,9 @@ export async function completeCourseSectionInDB(
     update: {},
   });
 
+  const { maybeNotifyFinalProjectUnlocked } = await import("@/lib/learning/final-project");
+  await maybeNotifyFinalProjectUnlocked(userId, courseId).catch(() => null);
+
   return { alreadyCompleted, xpAwarded, xpGain, xpReason, leveledUp, level };
 }
 

@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PeerReviewClient } from "@/components/student/PeerReviewClient";
 import { SectionTaskPeerReviewClient } from "@/components/student/SectionTaskPeerReviewClient";
+import { FinalProjectPeerReviewClient } from "@/components/student/FinalProjectPeerReviewClient";
+import { getFinalProjectReviewQueue } from "@/lib/learning/final-project";
 
 export const metadata: Metadata = { title: "Хамтран дүгнэх" };
 
@@ -19,6 +21,7 @@ export default async function PeerReviewPage() {
     mySectionTasks,
     assignedSectionTaskReviews,
     pendingSectionTasks,
+    finalProjectQueue,
   ] = await Promise.all([
     // My submitted capstones and their review status
     db.capstone.findMany({
@@ -107,10 +110,25 @@ export default async function PeerReviewPage() {
       orderBy: { submittedAt: "asc" },
       take: 10,
     }),
+
+    getFinalProjectReviewQueue(session.user.id),
   ]);
 
   return (
     <div className="space-y-6">
+      <FinalProjectPeerReviewClient
+        initialQueue={finalProjectQueue.map((item) => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          demoUrl: item.demoUrl,
+          githubUrl: item.githubUrl,
+          status: item.status,
+          reviewCount: item.reviews.length,
+          student: item.student,
+          course: item.course,
+        }))}
+      />
       <SectionTaskPeerReviewClient
         myTasks={mySectionTasks}
         assignedReviews={assignedSectionTaskReviews}

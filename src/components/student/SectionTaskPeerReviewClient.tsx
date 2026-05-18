@@ -9,6 +9,10 @@ import {
   submitSectionTaskReview,
 } from "@/modules/learning/application/task-actions";
 import { toast } from "@/components/ui/toaster";
+import {
+  assertMongolianSpellOk,
+  MongolianSpellTextarea,
+} from "@/components/mongolian/MongolianSpellTextarea";
 
 const rubric = [
   { key: "understanding", label: "Understanding" },
@@ -74,6 +78,11 @@ function ReviewModal({ submission, onClose }: { submission: AssignedTaskReview["
     }
 
     startTransition(async () => {
+      const spell = await assertMongolianSpellOk(feedback.trim());
+      if (!spell.ok) {
+        toast({ type: "warning", title: spell.message });
+        return;
+      }
       const result = await submitSectionTaskReview({
         submissionId: submission.id,
         score: avg,
@@ -131,12 +140,12 @@ function ReviewModal({ submission, onClose }: { submission: AssignedTaskReview["
             </label>
           ))}
 
-          <textarea
+          <MongolianSpellTextarea
             value={feedback}
-            onChange={(event) => setFeedback(event.target.value)}
+            onChange={setFeedback}
             rows={4}
-            placeholder="Сайжруулах санал болон үнэлгээний тайлбар..."
-            className="w-full resize-none rounded-xl border border-border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-violet-300"
+            label="Feedback"
+            placeholder="Сайжруулах санал болон үнэлгээний тайлбар (кирилл)..."
           />
 
           <div className="flex gap-2">

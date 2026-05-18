@@ -36,9 +36,7 @@ export type RateLimitResult = {
 const memoryRateLimitStore =
   globalForRedis.rateLimitMemory ?? new Map<string, number[]>();
 
-if (!env.isProduction) {
-  globalForRedis.rateLimitMemory = memoryRateLimitStore;
-}
+globalForRedis.rateLimitMemory = memoryRateLimitStore;
 
 function memoryRateLimit(
   key: string,
@@ -66,15 +64,6 @@ function memoryRateLimit(
     success: true,
     remaining: limit - hits.length,
     resetAt: new Date(now + windowSeconds * 1000),
-  };
-}
-
-function unavailableRateLimit(windowSeconds: number): RateLimitResult {
-  return {
-    success: false,
-    remaining: 0,
-    resetAt: new Date(Date.now() + windowSeconds * 1000),
-    unavailable: true,
   };
 }
 
@@ -143,20 +132,13 @@ export async function rateLimit(
   const windowStart = now - windowSeconds * 1000;
 
   if (!redis) {
-    if (strategy === "fail-closed" && env.isProduction) {
-      return unavailableRateLimit(windowSeconds);
-    }
-
     if (!env.isProduction) {
       console.warn("[rate-limit] Redis is unavailable; using in-memory development limiter.");
-      return memoryRateLimit(key, limit, windowSeconds);
+    } else if (strategy === "fail-closed") {
+      console.error("[rate-limit] Redis is unavailable; using in-memory fallback for sensitive limiter.");
     }
 
-    return {
-      success: true,
-      remaining: limit,
-      resetAt: new Date(now + windowSeconds * 1000),
-    };
+    return memoryRateLimit(key, limit, windowSeconds);
   }
 
   try {
@@ -182,19 +164,11 @@ export async function rateLimit(
   } catch (error) {
     console.error("[rate-limit] Redis error:", error);
 
-    if (strategy === "fail-closed" && env.isProduction) {
-      return unavailableRateLimit(windowSeconds);
+    if (strategy === "fail-closed") {
+      console.error("[rate-limit] Redis failed; using in-memory fallback for sensitive limiter.");
     }
 
-    if (!env.isProduction) {
-      return memoryRateLimit(key, limit, windowSeconds);
-    }
-
-    return {
-      success: true,
-      remaining: limit,
-      resetAt: new Date(now + windowSeconds * 1000),
-    };
+    return memoryRateLimit(key, limit, windowSeconds);
   }
 }
 

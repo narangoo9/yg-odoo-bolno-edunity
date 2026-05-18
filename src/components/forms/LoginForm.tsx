@@ -23,6 +23,35 @@ const INPUT_BASE =
   "dark:bg-violet-900/20 dark:text-white dark:placeholder:text-gray-500 " +
   "dark:focus:bg-violet-900/30 dark:focus:border-violet-500";
 
+function getSafeCallbackUrl(value: string | null) {
+  if (!value) return "/dashboard";
+  if (value.startsWith("/") && !value.startsWith("//")) return value;
+
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.origin === window.location.origin) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    // Fall through to the default dashboard route.
+  }
+
+  return "/dashboard";
+}
+
+function navigateToAuthUrl(value: string | undefined, fallback: string) {
+  if (!value) {
+    window.location.assign(fallback);
+    return;
+  }
+
+  try {
+    window.location.assign(new URL(value, window.location.origin).href);
+  } catch {
+    window.location.assign(fallback);
+  }
+}
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -69,13 +98,23 @@ export function LoginForm() {
     setServerError(null);
     clearAuthErrorFromUrl();
 
-    const destination = callbackUrl ?? "/dashboard";
-    const res = await signIn("credentials", {
-      email: data.email,
-      password: data.password,
-      redirect: false,
-      callbackUrl: destination,
-    });
+    const destination = getSafeCallbackUrl(callbackUrl);
+    let res;
+    try {
+      res = await signIn("credentials", {
+        email: data.email,
+        password: data.password,
+        redirect: false,
+        callbackUrl: destination,
+      });
+    } catch (err) {
+      setServerError(
+        err instanceof Error
+          ? `Нэвтрэлт амжилтгүй боллоо: ${err.message}`
+          : "Нэвтрэлт амжилтгүй боллоо. Дахин оролдоно уу.",
+      );
+      return;
+    }
 
     if (res?.error) {
       setServerError(resolveLoginErrorMessage(res.error, res.code ?? null));
@@ -83,7 +122,7 @@ export function LoginForm() {
     }
 
     if (res?.url) {
-      window.location.assign(res.url);
+      navigateToAuthUrl(res.url, destination);
       return;
     }
 
@@ -196,7 +235,7 @@ export function LoginForm() {
               setGoogleSubmitting(true);
               try {
                 const res = await signIn("google", {
-                  callbackUrl: callbackUrl ?? "/dashboard",
+                  callbackUrl: getSafeCallbackUrl(callbackUrl),
                   redirect: false,
                 });
                 if (res?.error) {
@@ -207,7 +246,7 @@ export function LoginForm() {
                   return;
                 }
                 if (res?.url) {
-                  window.location.assign(res.url);
+                  navigateToAuthUrl(res.url, getSafeCallbackUrl(callbackUrl));
                 }
               } catch (err) {
                 setServerError(

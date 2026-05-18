@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Award, BookOpen, Plus, Users } from "lucide-react";
+import { Award, BookOpen, Plus, Search, Users } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/index";
@@ -16,19 +16,32 @@ const statusConfig = {
   UNDER_REVIEW: { label: "Хянагдаж байна", variant: "warning" as const },
 };
 
-export default async function OrgCoursesPage() {
+interface PageProps {
+  searchParams: Promise<{ search?: string }>;
+}
+
+export default async function OrgCoursesPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/login");
   }
 
+  const sp = await searchParams;
   const orgId = session.user.organizationId;
   if (!orgId) {
     redirect("/org");
   }
 
   const courses = await db.course.findMany({
-    where: { organizationId: orgId },
+    where: {
+      organizationId: orgId,
+      ...(sp.search && {
+        OR: [
+          { title: { contains: sp.search, mode: "insensitive" as const } },
+          { description: { contains: sp.search, mode: "insensitive" as const } },
+        ],
+      }),
+    },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -56,6 +69,17 @@ export default async function OrgCoursesPage() {
           Шинэ курс
         </Link>
       </div>
+
+      <form method="get" className="relative max-w-md">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          name="search"
+          type="search"
+          defaultValue={sp.search}
+          placeholder="Курс хайх..."
+          className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40"
+        />
+      </form>
 
       {courses.length === 0 ? (
         <div className="text-center py-20 bg-card rounded-2xl border border-dashed border-violet-200 dark:border-violet-800/40">

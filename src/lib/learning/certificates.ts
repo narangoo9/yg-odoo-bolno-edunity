@@ -1,5 +1,12 @@
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
+import {
+  MIN_PEER_REVIEWS,
+  MIN_REVIEWS_GIVEN_FOR_CERT,
+  reviewsPassCriteria,
+  countReviewsGiven,
+} from "@/lib/learning/final-project";
+import { isCourseCompletedForCertificate } from "@/lib/learning/progress";
 
 function certificateNo() {
   return `CERT-${new Date().getFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
@@ -24,22 +31,54 @@ export async function issueCourseCertificateIfEligible(studentId: string, course
   });
   if (!course || course._count.sections === 0) return { issued: false, certificate: null };
 
-  const [completedSections, gradedTasks, taskAverage] = await Promise.all([
-    db.course_section_completions.count({
-      where: { studentId, course_sections: { courseId } },
-    }),
-    db.courseSectionTaskSubmission.count({
-      where: { studentId, courseId, status: "GRADED" },
-    }),
-    db.courseSectionTaskSubmission.aggregate({
-      where: { studentId, courseId, status: "GRADED", score: { not: null } },
-      _avg: { score: true },
-    }),
-  ]);
+  const lessonsComplete = await isCourseCompletedForCertificate(studentId, courseId);
+  if (!lessonsComplete) return { issued: false, certificate: null };
 
-  if (completedSections < course._count.sections || gradedTasks < course._count.sections) {
+  const finalProject = await db.courseFinalProjectSubmission.findUnique({
+    where: { studentId_courseId: { studentId, courseId } },
+    include: {
+      reviews: {
+        select: {
+          starRating: true,
+          rubricUnderstanding: true,
+          rubricEffort: true,
+          rubricFunctionality: true,
+          rubricDesign: true,
+          decision: true,
+        },
+      },
+    },
+  });
+
+  if (!finalProject || finalProject.isBlocked) {
     return { issued: false, certificate: null };
   }
+
+  if (finalProject.status !== "PASSED" || finalProject.reviews.length < MIN_PEER_REVIEWS) {
+    if (finalProject.reviews.length >= MIN_PEER_REVIEWS && reviewsPassCriteria(finalProject.reviews)) {
+      await db.courseFinalProjectSubmission.update({
+        where: { id: finalProject.id },
+        data: { status: "PASSED" },
+      });
+    } else {
+      return { issued: false, certificate: null };
+    }
+  }
+
+  const reviewsGiven = await countReviewsGiven(studentId, courseId);
+  if (reviewsGiven < MIN_REVIEWS_GIVEN_FOR_CERT) {
+    return { issued: false, certificate: null };
+  }
+
+  const starAvg =
+    finalProject.reviews.reduce((s, r) => s + r.starRating, 0) / finalProject.reviews.length;
+  const rubricAvg =
+    finalProject.reviews.reduce(
+      (s, r) =>
+        s +
+        (r.rubricUnderstanding + r.rubricEffort + r.rubricFunctionality + r.rubricDesign) / 4,
+      0,
+    ) / finalProject.reviews.length;
 
   const certificate = await db.certificate.create({
     data: {
@@ -51,22 +90,26 @@ export async function issueCourseCertificateIfEligible(studentId: string, course
       metadata: {
         courseTitle: course.title,
         instructorName: course.instructor.name,
-        peerReviewedTasks: gradedTasks,
-        averageTaskScore: taskAverage._avg.score ?? null,
+        finalProjectReviews: finalProject.reviews.length,
+        averageStar: starAvg,
+        averageRubric: rubricAvg,
+        reviewsGiven,
       },
     },
     select: { id: true, certificateNo: true, verificationCode: true },
   });
 
-  await db.notification.create({
-    data: {
-      userId: studentId,
-      type: "CERTIFICATE_READY",
-      title: "Certificate бэлэн боллоо",
-      body: `${course.title} курсийн бүх video task peer review-ээр баталгаажиж certificate нээгдлээ.`,
-      data: { certificateId: certificate.id, courseId },
-    },
-  }).catch(() => null);
+  await db.notification
+    .create({
+      data: {
+        userId: studentId,
+        type: "CERTIFICATE_READY",
+        title: "Certificate бэлэн боллоо",
+        body: `${course.title} курсын Final Project болон peer review шаардлагыг хангаж certificate нээгдлээ.`,
+        data: { certificateId: certificate.id, courseId },
+      },
+    })
+    .catch(() => null);
 
   return { issued: true, certificate };
 }

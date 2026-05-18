@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import type { UserRole } from "@prisma/client";
 import { Bell, Search, Sun, Moon, Languages, BookOpen, Trophy, Award, MessageSquare, X, GitMerge, CheckCheck, Menu, Bookmark } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -12,6 +11,7 @@ import { getInitials } from "@/lib/utils";
 import { settingsRouteByRole } from "@/lib/dashboard-routes";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useMobileSidebar } from "@/components/layout/DashboardLayoutClient";
+import { HeaderSearch } from "@/components/layout/HeaderSearch";
 import { localeLabels, type Locale } from "@/lib/i18n/translations";
 import { useMounted } from "@/lib/use-mounted";
 import { cn } from "@/lib/utils";
@@ -80,22 +80,9 @@ export function DashboardTopbar({
   const notifRef = useRef<HTMLDivElement>(null);
   const savedRef = useRef<HTMLDivElement>(null);
   const mounted  = useMounted();
-  const router   = useRouter();
   const { openSidebar } = useMobileSidebar();
   const savedSeenStorageKey = `saved-courses-seen:${user.id}`;
-
-  const searchRouteByRole: Record<UserRole, string> = {
-    USER: "/student/catalog",
-    COMPANY: "/org/courses",
-    SUPER_ADMIN: "/admin/users",
-  };
-
-  function handleSearch(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const value = (e.currentTarget.querySelector("input") as HTMLInputElement).value.trim();
-    const base = searchRouteByRole[user.role];
-    router.push(value ? `${base}?search=${encodeURIComponent(value)}` : base);
-  }
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const { resolvedTheme, setTheme } = useTheme();
   const { locale, setLocale, t }    = useLanguage();
@@ -192,7 +179,7 @@ export function DashboardTopbar({
   };
 
   return (
-    <header className="h-16 shrink-0 bg-white dark:bg-[#0d0b1f] border-b border-violet-100 dark:border-violet-900/20 flex items-center justify-between px-3 sm:px-6 gap-2 sm:gap-4 shadow-sm shadow-violet-100/50 dark:shadow-none transition-colors duration-300">
+    <header className="relative h-16 shrink-0 bg-white dark:bg-[#0d0b1f] border-b border-violet-100 dark:border-violet-900/20 flex items-center justify-between px-3 sm:px-6 gap-2 sm:gap-4 shadow-sm shadow-violet-100/50 dark:shadow-none transition-colors duration-300">
       {/* Mobile hamburger */}
       <button
         onClick={openSidebar}
@@ -202,15 +189,26 @@ export function DashboardTopbar({
         <Menu size={20} />
       </button>
 
-      {/* Search */}
-      <form onSubmit={handleSearch} className="relative flex-1 max-w-sm hidden md:block">
-        <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/80 pointer-events-none" />
-        <input
-          type="search"
+      <Suspense
+        fallback={
+          <div className="hidden md:block flex-1 max-w-sm h-9 rounded-xl bg-muted/50 animate-pulse" />
+        }
+      >
+        <HeaderSearch
+          role={user.role}
           placeholder={t("topbar.search")}
-          className="w-full pl-9 pr-4 py-2 text-sm bg-[#f5f3ff] dark:bg-violet-900/10 border border-violet-200/60 dark:border-violet-800/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:bg-white dark:focus:bg-violet-900/20 text-foreground placeholder:text-muted-foreground/80 transition-colors"
+          className="hidden md:block flex-1 max-w-sm"
         />
-      </form>
+      </Suspense>
+
+      <button
+        type="button"
+        onClick={() => setMobileSearchOpen((v) => !v)}
+        className="md:hidden flex items-center justify-center w-9 h-9 rounded-full hover:bg-violet-50 dark:hover:bg-violet-900/20 text-muted-foreground shrink-0"
+        aria-label={t("topbar.search")}
+      >
+        <Search size={18} />
+      </button>
 
       <div className="flex items-center gap-2 ml-auto">
 
@@ -530,6 +528,26 @@ export function DashboardTopbar({
           </Avatar>
         </Link>
       </div>
+
+      {/* Mobile search panel */}
+      <AnimatePresence>
+        {mobileSearchOpen ? (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden absolute left-0 right-0 top-16 z-50 border-b border-violet-100 bg-white px-3 py-3 dark:border-violet-900/30 dark:bg-[#0d0b1f]"
+          >
+            <Suspense fallback={<div className="h-9 rounded-xl bg-muted/50 animate-pulse" />}>
+              <HeaderSearch
+                role={user.role}
+                placeholder={t("topbar.search")}
+                className="w-full"
+              />
+            </Suspense>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </header>
   );
 }

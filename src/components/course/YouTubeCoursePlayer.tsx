@@ -28,6 +28,13 @@ import {
 import { usePersistentVideoStore } from "@/lib/learning-player-store";
 import { cn } from "@/lib/utils";
 import { formatSeconds } from "@/lib/youtube-course";
+import { WATCH_COMPLETION_RATIO, sectionDurationSeconds } from "@/lib/learning/section-watch-utils";
+import { FinalProjectPanel } from "@/components/course/FinalProjectPanel";
+import { LearningJourneyGuide } from "@/components/course/LearningJourneyGuide";
+import {
+  assertMongolianSpellOk,
+  MongolianSpellTextarea,
+} from "@/components/mongolian/MongolianSpellTextarea";
 
 interface CourseSection {
   id: string;
@@ -147,6 +154,24 @@ function lockedSectionMessage(sectionIndex: number, totalSections: number) {
     : "Дараагийн хэсэг түгжээтэй. Premium аваад курсын 50%-ийг үргэлжлүүлэн үзнэ үү?";
 }
 
+function resumeSecondsForSection(
+  section: CourseSection,
+  sections: CourseSection[],
+  watchProgress: Record<string, { lastPositionSec: number; watchTimeSec: number }>,
+  explicitSeconds?: number,
+) {
+  if (explicitSeconds != null && explicitSeconds > section.startSeconds + 1) {
+    const end = getEffectiveEndSeconds(section, sections);
+    return Math.min(explicitSeconds, Math.max(section.startSeconds, end - 1));
+  }
+  const saved = watchProgress[section.id]?.lastPositionSec;
+  if (saved != null && saved > section.startSeconds + 2) {
+    const end = getEffectiveEndSeconds(section, sections);
+    return Math.min(saved, Math.max(section.startSeconds, end - 1));
+  }
+  return section.startSeconds;
+}
+
 export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) {
   const pathname = usePathname();
   const router = useRouter();
@@ -176,9 +201,33 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   const [taskSubmitSuccess, setTaskSubmitSuccess] = useState<string | null>(null);
   const [submittingTask, setSubmittingTask] = useState(false);
   const [certificate, setCertificate] = useState<{ id: string; certificateNo: string; verificationCode: string } | null>(null);
+  const [finalProject, setFinalProject] = useState<{
+    unlocked: boolean;
+    lessonsComplete: boolean;
+    reviewsGiven: number;
+    reviewsRequired: number;
+    submission: {
+      id: string;
+      title: string;
+      description: string;
+      demoUrl: string | null;
+      githubUrl: string | null;
+      status: string;
+      reviewCount: number;
+      passed: boolean;
+      reviews: Array<{ starRating: number; decision: string; feedback: string }>;
+    } | null;
+  } | null>(null);
+  const [sectionWatchPercent, setSectionWatchPercent] = useState(0);
   const [notes, setNotes] = useState<TimestampNote[]>([]);
   const [noteDraft, setNoteDraft] = useState("");
   const [upgradeReason, setUpgradeReason] = useState<string | null>(null);
+  const [sectionCompleteError, setSectionCompleteError] = useState<string | null>(null);
+  const [watchProgressMap, setWatchProgressMap] = useState<
+    Record<string, { lastPositionSec: number; watchTimeSec: number }>
+  >({});
+  const [playerSeekSeconds, setPlayerSeekSeconds] = useState(sections[0]?.startSeconds ?? 0);
+  const [progressHydrated, setProgressHydrated] = useState(false);
 
   const activeSection = sections.find((section) => section.id === activeId) ?? sections[0];
   const activeIndex = activeSection ? sections.findIndex((section) => section.id === activeSection.id) : -1;
@@ -195,6 +244,9 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   );
   const allSectionsComplete = sections.length > 0 && completedSections.size >= sections.length;
   const gradedTasks = Object.values(taskSubmissions).filter((s) => s.status === "GRADED").length;
+  const submittedTasks = Object.values(taskSubmissions).filter(
+    (s) => s.status === "SUBMITTED" || s.status === "PENDING_REVIEW" || s.status === "GRADED",
+  ).length;
   const certificateReadiness = Math.min(
     100,
     Math.round(watchedPercent * 0.5 + (gradedTasks > 0 ? 25 : 0) + (certificate ? 25 : 0)),
@@ -210,6 +262,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   activeSectionRef.current = activeSection;
   const currentSecondsRef = useRef(currentSeconds);
   currentSecondsRef.current = currentSeconds;
+  const completedSectionsRef = useRef(completedSections);
+  completedSectionsRef.current = completedSections;
 
   // Watch progress accumulation
   const watchDeltaRef = useRef(0);
@@ -222,23 +276,38 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     [activeSection, sections],
   );
 
-  const flushWatchProgress = useCallback(() => {
+  const flushWatchProgress = useCallback(async (): Promise<boolean> => {
     const section = activeSectionRef.current;
-    if (!section) return;
+    if (!section) return true;
     const delta = Math.min(Math.floor(watchDeltaRef.current), 3600);
+    const lastPos = Math.floor(currentSecondsRef.current);
     watchDeltaRef.current = 0;
-    prevProgressSecondsRef.current = null;
-    if (delta <= 0) return;
-    fetch("/api/v1/learning/watch-progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        courseId: course.id,
-        sectionId: section.id,
-        lastPositionSec: Math.floor(currentSecondsRef.current),
-        watchedDeltaSec: delta,
-      }),
-    }).catch(() => {});
+    if (delta <= 0) return true;
+    try {
+      const res = await fetch("/api/v1/learning/watch-progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseId: course.id,
+          sectionId: section.id,
+          lastPositionSec: lastPos,
+          watchedDeltaSec: delta,
+        }),
+      });
+      if (res.ok) {
+        setWatchProgressMap((current) => ({
+          ...current,
+          [section.id]: {
+            lastPositionSec: lastPos,
+            watchTimeSec: (current[section.id]?.watchTimeSec ?? 0) + delta,
+          },
+        }));
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   }, [course.id]);
 
   useEffect(() => {
@@ -253,16 +322,17 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     if (fallbackId && fallbackId !== activeId) {
       const fallback = sections.find((section) => section.id === fallbackId);
       if (fallback) {
+        const resume = resumeSecondsForSection(fallback, sections, watchProgressMap);
         setActiveId(fallbackId);
-        setCurrentSeconds(fallback.startSeconds);
+        setPlayerSeekSeconds(resume);
+        setCurrentSeconds(resume);
       }
     }
-  }, [accessPlan, activeId, sections]);
+  }, [accessPlan, activeId, sections, watchProgressMap]);
 
-  // Load DB state on mount; fall back to localStorage if API fails
+  // Load progress from DB (source of truth for completions + watch position)
   useEffect(() => {
     const prefix = storagePrefix;
-    const initialSectionId = sections[0]?.id ?? "";
 
     type LsNote = { id: string; sectionId: string; seconds: number; text: string; createdAt: string };
     type DbState = {
@@ -271,6 +341,8 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
       taskSubmissions: Record<string, TaskSubmission>;
       certificate: { id: string; certificateNo: string; verificationCode: string } | null;
       watchProgress: Record<string, { lastPositionSec: number; watchTimeSec: number }>;
+      watchBySection?: Record<string, { percent: number; complete: boolean }>;
+      finalProject?: typeof finalProject;
       notes: TimestampNote[];
     };
 
@@ -283,43 +355,29 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
           taskSubmissions: dbTaskSubmissions,
           certificate: dbCertificate,
           watchProgress,
+          watchBySection,
+          finalProject: dbFinalProject,
           notes: dbNotes,
         } = json.data;
 
-        const dbHasData =
-          completedSectionIds.length > 0 ||
-          Object.keys(dbTaskStates).length > 0 ||
-          Object.keys(dbTaskSubmissions).length > 0 ||
-          dbCertificate != null ||
-          dbNotes.length > 0;
+        setCompletedSections(new Set(completedSectionIds ?? []));
+        setTaskStates(dbTaskStates ?? {});
+        setTaskSubmissions(dbTaskSubmissions ?? {});
+        setCertificate(dbCertificate ?? null);
+        setFinalProject(dbFinalProject ?? null);
+        setNotes(dbNotes ?? []);
+        setWatchProgressMap(watchProgress ?? {});
 
-        if (!dbHasData) {
-          // One-time migration from localStorage
-          const lsCompleted = readJson<string[]>(`${prefix}:completed-sections`, []);
-          const lsTasks = readJson<Record<string, TaskState>>(`${prefix}:tasks`, {});
-          const lsNotes = readJson<LsNote[]>(`${prefix}:notes`, []);
-          setCompletedSections(new Set(lsCompleted));
-          setTaskStates(lsTasks);
-          setTaskSubmissions({});
-          setCertificate(null);
-          setNotes(
-            lsNotes.map((n) => ({
-              id: n.id,
-              sectionId: n.sectionId,
-              seconds: n.seconds,
-              content: n.text,
-              createdAt: n.createdAt,
-            })),
-          );
-        } else {
-          setCompletedSections(new Set(completedSectionIds));
-          setTaskStates(dbTaskStates);
-          setTaskSubmissions(dbTaskSubmissions);
-          setCertificate(dbCertificate);
-          setNotes(dbNotes);
-          const wp = watchProgress[initialSectionId];
-          if (wp?.lastPositionSec) setCurrentSeconds(wp.lastPositionSec);
+        const active = sections.find((s) => s.id === activeId) ?? sections[0];
+        if (active) {
+          const resume = resumeSecondsForSection(active, sections, watchProgress ?? {});
+          setPlayerSeekSeconds(resume);
+          setCurrentSeconds(resume);
+          const watch = watchBySection?.[active.id];
+          if (watch) setSectionWatchPercent(watch.percent);
+          else if (completedSectionIds.includes(active.id)) setSectionWatchPercent(100);
         }
+        setProgressHydrated(true);
       })
       .catch(() => {
         const lsNotes = readJson<LsNote[]>(`${prefix}:notes`, []);
@@ -336,9 +394,22 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
             createdAt: n.createdAt,
           })),
         );
+        setProgressHydrated(true);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course.id]);
+
+  useEffect(() => {
+    if (!progressHydrated || !activeSection) return;
+    const resume = resumeSecondsForSection(activeSection, sections, watchProgressMap);
+    setPlayerSeekSeconds(resume);
+    setCurrentSeconds(resume);
+    prevProgressSecondsRef.current = null;
+    sectionEndHandledRef.current = false;
+    if (completedSections.has(activeSection.id)) {
+      setSectionWatchPercent(100);
+    }
+  }, [activeSection?.id, progressHydrated]);
 
   // Flush watch progress on unmount
   useEffect(() => {
@@ -378,33 +449,67 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
   }, [activeSection?.id, effectiveEndSeconds]);
 
   const markSectionComplete = useCallback(
-    (section: CourseSection) => {
+    async (section: CourseSection): Promise<boolean> => {
       const index = sectionIndexOf(sections, section.id);
-      if (!canAccessLearningItem(accessPlan, index, sections.length)) return;
+      if (!canAccessLearningItem(accessPlan, index, sections.length)) return false;
+      if (completedSectionsRef.current.has(section.id)) return true;
 
-      setCompletedSections((current) => new Set([...current, section.id]));
-      setTaskStates((current) => {
-        const currentState = current[section.id];
-        return { ...current, [section.id]: currentState === "completed" ? "completed" : "draft" };
-      });
-      fetch("/api/v1/learning/section-complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseId: course.id, sectionId: section.id }),
-      })
-        .then(async (res) => {
-          const json = (await res.json().catch(() => null)) as {
-            success?: boolean;
-            data?: { xpGain?: number; xpReason?: string; leveledUp?: boolean; level?: number };
-          } | null;
-          if (!json?.success || !json.data?.xpGain) return;
+      setSectionCompleteError(null);
+      const lastPos = Math.floor(currentSecondsRef.current);
+      const pendingDelta = Math.min(Math.floor(watchDeltaRef.current), 3600);
+      watchDeltaRef.current = 0;
+
+      await flushWatchProgress();
+
+      try {
+        const res = await fetch("/api/v1/learning/section-complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            courseId: course.id,
+            sectionId: section.id,
+            lastPositionSec: lastPos,
+            watchedDeltaSec: pendingDelta,
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          error?: string;
+          data?: { xpGain?: number; xpReason?: string; leveledUp?: boolean; level?: number };
+        } | null;
+
+        if (!res.ok || !json?.success) {
+          setSectionCompleteError(json?.error ?? "Section дуусгахад алдаа гарлаа. Дахин оролдоно уу.");
+          return false;
+        }
+
+        setCompletedSections((current) => {
+          if (current.has(section.id)) return current;
+          const next = new Set([...current, section.id]);
+          try {
+            window.localStorage.setItem(`${storagePrefix}:completed-sections`, JSON.stringify([...next]));
+          } catch {
+            // ignore
+          }
+          return next;
+        });
+        setTaskStates((current) => {
+          const currentState = current[section.id];
+          return { ...current, [section.id]: currentState === "completed" ? "completed" : "draft" };
+        });
+
+        if (json.data?.xpGain) {
           const { showXpGainOnClient } = await import("@/lib/gamification/show-xp-client");
           showXpGainOnClient(json.data);
           router.refresh();
-        })
-        .catch(() => null);
+        }
+        return true;
+      } catch {
+        setSectionCompleteError("Сүлжээний алдаа. Progress хадгалагдаагүй байж болно.");
+        return false;
+      }
     },
-    [accessPlan, course.id, router, sections],
+    [accessPlan, course.id, flushWatchProgress, router, sections, storagePrefix],
   );
 
   const handleSectionEnded = useCallback(() => {
@@ -414,37 +519,38 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     const section = activeSectionRef.current;
     if (!section) return;
 
-    markSectionComplete(section);
-    flushWatchProgress();
+    void (async () => {
+      const saved = await markSectionComplete(section);
+      if (!saved) {
+        sectionEndHandledRef.current = false;
+        return;
+      }
 
-    const index = sectionIndexOf(sections, section.id);
-    const next = index >= 0 && index < sections.length - 1 ? sections[index + 1]! : null;
+      const index = sectionIndexOf(sections, section.id);
+      const next = index >= 0 && index < sections.length - 1 ? sections[index + 1]! : null;
 
-    if (!next) {
-      setTab("tasks");
-      setTaskSubmitSuccess("Video дууслаа. Одоо энэ section-ийн task-аа илгээнэ үү.");
-      return;
-    }
+      if (!next) {
+        setTab("tasks");
+        setTaskSubmitSuccess("Бүх хичээл дууслаа. Одоо section task болон Final Project-оо илгээнэ үү.");
+        return;
+      }
 
-    const nextIndex = index + 1;
-    if (canAccessLearningItem(accessPlan, nextIndex, sections.length)) {
-      setActiveId(next.id);
-      setCurrentSeconds(next.startSeconds);
-      updatePersistentTimestamp(next.startSeconds);
-      prevProgressSecondsRef.current = null;
-      sectionEndHandledRef.current = false;
-      setTaskSubmitSuccess(`"${section.title}" дууслаа. Дараагийн хэсэг рүү шилжлээ.`);
-      return;
-    }
+      const nextIndex = index + 1;
+      if (canAccessLearningItem(accessPlan, nextIndex, sections.length)) {
+        const resume = resumeSecondsForSection(next, sections, watchProgressMap);
+        setActiveId(next.id);
+        setPlayerSeekSeconds(resume);
+        setCurrentSeconds(resume);
+        updatePersistentTimestamp(resume);
+        prevProgressSecondsRef.current = null;
+        sectionEndHandledRef.current = false;
+        setTaskSubmitSuccess(`"${section.title}" дууслаа. Дараагийн хэсэг рүү шилжлээ.`);
+        return;
+      }
 
-    setUpgradeReason(lockedSectionMessage(nextIndex, sections.length));
-  }, [
-    accessPlan,
-    flushWatchProgress,
-    markSectionComplete,
-    sections,
-    updatePersistentTimestamp,
-  ]);
+      setUpgradeReason(lockedSectionMessage(nextIndex, sections.length));
+    })();
+  }, [accessPlan, markSectionComplete, sections, updatePersistentTimestamp, watchProgressMap]);
 
   const handlePlaybackProgress = useCallback(
     (seconds: number) => {
@@ -465,6 +571,19 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
 
       const section = activeSectionRef.current;
       if (!section || sectionEndHandledRef.current) return;
+
+      const index = sectionIndexOf(sections, section.id);
+      const durationSec = sectionDurationSeconds(section, sections, index);
+      const requiredSec = Math.ceil(durationSec * WATCH_COMPLETION_RATIO);
+      const watchedInSection = Math.max(0, seconds - section.startSeconds);
+      const percent = Math.min(100, Math.round((watchedInSection / durationSec) * 100));
+      setSectionWatchPercent(percent);
+
+      if (watchedInSection >= requiredSec) {
+        handleSectionEnded();
+        return;
+      }
+
       const endAt = getEffectiveEndSeconds(section, sections);
       if (seconds >= endAt - 0.35) {
         handleSectionEnded();
@@ -472,6 +591,14 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     },
     [flushWatchProgress, handleSectionEnded, sections, updatePersistentTimestamp],
   );
+
+  useEffect(() => {
+    if (!activeSection) return;
+    const index = sectionIndexOf(sections, activeSection.id);
+    const durationSec = sectionDurationSeconds(activeSection, sections, index);
+    const watched = Math.max(0, currentSeconds - activeSection.startSeconds);
+    setSectionWatchPercent(Math.min(100, Math.round((watched / durationSec) * 100)));
+  }, [activeSection, currentSeconds, sections]);
 
   if (!activeSection) {
     return (
@@ -499,6 +626,12 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     }
     if (taskDraft.trim().length < 20) {
       setTaskSubmitError("Task submission хамгийн багадаа 20 тэмдэгттэй байх ёстой.");
+      return;
+    }
+
+    const spell = await assertMongolianSpellOk(taskDraft.trim());
+    if (!spell.ok) {
+      setTaskSubmitError(spell.message);
       return;
     }
 
@@ -580,7 +713,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
     }
   };
 
-  const selectSection = (section: CourseSection, seconds = section.startSeconds) => {
+  const selectSection = (section: CourseSection, seconds?: number) => {
     const sectionIndex = sectionIndexOf(sections, section.id);
     if (!canAccessLearningItem(accessPlan, sectionIndex, sections.length)) {
       const requiredPlan = getRequiredPlanForIndex(sectionIndex, sections.length);
@@ -592,10 +725,13 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
       return;
     }
 
-    flushWatchProgress();
+    void flushWatchProgress();
+    const resume = resumeSecondsForSection(section, sections, watchProgressMap, seconds);
     setActiveId(section.id);
-    setCurrentSeconds(seconds);
-    updatePersistentTimestamp(seconds);
+    setPlayerSeekSeconds(resume);
+    setCurrentSeconds(resume);
+    updatePersistentTimestamp(resume);
+    if (completedSections.has(section.id)) setSectionWatchPercent(100);
   };
 
   return (
@@ -793,9 +929,9 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
               )}
             >
               <YouTubeSectionPlayer
-                key={activeSection.id}
+                key={`${activeSection.id}-${playerSeekSeconds}`}
                 videoId={course.sourceYoutubeId}
-                startSeconds={activeSection.startSeconds}
+                startSeconds={playerSeekSeconds}
                 endSeconds={effectiveEndSeconds}
                 title={activeSection.title}
                 theater={focusMode}
@@ -809,8 +945,14 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
             </h2>
             <p className="mt-0.5 text-[12px] text-muted-foreground">
               Хэсэг {activeSection.order} · {sectionRange(activeSection)} · {formatSeconds(currentSeconds)} /{" "}
-              {formatSeconds(effectiveEndSeconds)}
+              {formatSeconds(effectiveEndSeconds)} · Үзсэн {sectionWatchPercent}%
+              {activeSectionCompleted ? " · ✓ Дууссан" : sectionWatchPercent >= 90 ? " · Бэлэн" : ""}
             </p>
+            {sectionCompleteError ? (
+              <p className="mt-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-700 dark:text-red-300">
+                {sectionCompleteError}
+              </p>
+            ) : null}
           </div>
 
           {/* Tabs */}
@@ -835,6 +977,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
 
             <div className="p-4 pb-8">
               {tab === "overview" ? (
+                <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
                     { label: "Sections", value: `${sections.length}`, color: "from-violet-500 to-violet-600", light: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
@@ -850,6 +993,21 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                       </p>
                     </div>
                   ))}
+                </div>
+                <FinalProjectPanel
+                  courseId={course.id}
+                  initial={finalProject}
+                  certificate={certificate ? { id: certificate.id, certificateNo: certificate.certificateNo } : null}
+                  onSubmitted={() => {
+                    fetch(`/api/v1/learning/progress?courseId=${course.id}`)
+                      .then((r) => r.json())
+                      .then((json: { data?: { finalProject?: typeof finalProject; certificate?: typeof certificate } }) => {
+                        if (json.data?.finalProject) setFinalProject(json.data.finalProject);
+                        if (json.data?.certificate) setCertificate(json.data.certificate);
+                      })
+                      .catch(() => null);
+                  }}
+                />
                 </div>
               ) : null}
 
@@ -930,12 +1088,14 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
                       </div>
                     ) : (
                       <div className="mt-4 space-y-3">
-                        <textarea
+                        <MongolianSpellTextarea
                           value={taskDraft}
-                          onChange={(event) => setTaskDraft(event.target.value)}
+                          onChange={setTaskDraft}
                           disabled={!activeSectionCompleted || submittingTask}
-                          placeholder="Юу хийсэн, хэрхэн хийсэн, ямар үр дүн гарсан талаар бичнэ үү..."
-                          className="min-h-[150px] w-full resize-none rounded-xl border border-border bg-background p-4 text-[14px] text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          rows={6}
+                          label="Section task"
+                          placeholder="Юу хийсэн, хэрхэн хийсэн, ямар үр дүн гарсан талаар бичнэ үү (кирилл эсвэл латин: sain baina)..."
+                          className="min-h-[150px] text-[14px]"
                         />
                         <input
                           value={taskUrl}
@@ -1027,11 +1187,13 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
               {tab === "notes" ? (
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
                   <div>
-                    <textarea
+                    <MongolianSpellTextarea
                       value={noteDraft}
-                      onChange={(event) => setNoteDraft(event.target.value)}
-                      placeholder={`Write a note at ${formatSeconds(currentSeconds)}`}
-                      className="min-h-[140px] w-full resize-none rounded-xl border border-border bg-muted/40 p-4 text-[14px] outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-200"
+                      onChange={setNoteDraft}
+                      rows={5}
+                      label="Тэмдэглэл"
+                      placeholder={`${formatSeconds(currentSeconds)} дээр тэмдэглэл (кирилл)...`}
+                      className="min-h-[140px] bg-muted/40 text-[14px]"
                     />
                     <button
                       type="button"
@@ -1079,6 +1241,23 @@ export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) 
           </section>
         </main>
       </div>
+
+      {progressHydrated && allSectionsComplete ? (
+        <LearningJourneyGuide
+          totalSections={sections.length}
+          completedSections={completedSections.size}
+          tasksSubmitted={submittedTasks}
+          tasksGraded={gradedTasks}
+          finalProjectUnlocked={Boolean(finalProject?.unlocked)}
+          finalProjectSubmitted={Boolean(finalProject?.submission)}
+          finalProjectPassed={Boolean(finalProject?.submission?.passed)}
+          reviewsGiven={finalProject?.reviewsGiven ?? 0}
+          reviewsRequired={finalProject?.reviewsRequired ?? 2}
+          hasCertificate={Boolean(certificate)}
+          onGoTasks={() => setTab("tasks")}
+          onGoOverview={() => setTab("overview")}
+        />
+      ) : null}
 
       <UpgradeModal
         open={upgradeReason != null}

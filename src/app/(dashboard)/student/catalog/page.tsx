@@ -178,7 +178,7 @@ export default async function StudentCatalogPage({ searchParams }: PageProps) {
 
       {/* ── SEARCH + FILTERS ────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <form className="relative flex-1">
+        <form method="get" className="relative flex-1">
           <Search
             size={15}
             className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"

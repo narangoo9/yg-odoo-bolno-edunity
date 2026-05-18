@@ -215,11 +215,24 @@ enum NotificationType {
   COURSE_PUBLISHED
   QUIZ_RESULT
   CERTIFICATE_READY
+  FINAL_PROJECT_UNLOCKED
+  PROJECT_SUBMITTED
+  PEER_REVIEW_RECEIVED
+  PROJECT_PASSED
   PAYMENT_SUCCESS
   PAYMENT_FAILED
   COURSE_REMINDER
   LIVE_CLASS_REMINDER
   SYSTEM
+}
+
+enum FinalProjectStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  PASSED
+  NEEDS_IMPROVEMENT
+  REJECTED
 }
 
 enum NotificationChannel {
@@ -299,6 +312,8 @@ model User {
   capstoneReviews            CapstoneReview[]
   sectionTaskSubmissions     CourseSectionTaskSubmission[]
   sectionTaskReviews         CourseSectionTaskReview[]
+  finalProjectSubmissions    CourseFinalProjectSubmission[]
+  finalProjectReviews        CourseFinalProjectReview[]
   // Phase 3: orders
   orders                     Order[]
   // Phase 4: engagement
@@ -481,6 +496,7 @@ model Course {
   modules            CourseModule[]
   sections           CourseSection[]
   sectionTaskSubmissions CourseSectionTaskSubmission[]
+  finalProjectSubmissions CourseFinalProjectSubmission[]
   enrollments        Enrollment[]
   quizzes            Quiz[]
   certificates       Certificate[]
@@ -871,8 +887,57 @@ model Certificate {
   programEnrollment ProgramEnrollment? @relation(fields: [programEnrollmentId], references: [id])
 
   @@unique([studentId, programId])
+  @@unique([studentId, courseId])
   @@index([studentId])
+  @@index([courseId])
   @@map("certificates")
+}
+
+model CourseFinalProjectSubmission {
+  id            String             @id @default(cuid())
+  courseId      String
+  programId     String?
+  studentId     String
+  title         String
+  description   String             @db.Text
+  demoUrl       String?
+  githubUrl     String?
+  attachmentUrl String?
+  status        FinalProjectStatus @default(DRAFT)
+  isBlocked     Boolean            @default(false)
+  submittedAt   DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  course  Course                     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student User                       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reviews CourseFinalProjectReview[]
+
+  @@unique([studentId, courseId])
+  @@index([courseId, status])
+  @@index([studentId, createdAt(sort: Desc)])
+  @@map("course_final_project_submissions")
+}
+
+model CourseFinalProjectReview {
+  id                  String   @id @default(cuid())
+  submissionId        String
+  reviewerId          String
+  starRating          Int
+  rubricUnderstanding Int
+  rubricEffort        Int
+  rubricFunctionality Int
+  rubricDesign        Int
+  feedback            String   @db.Text
+  decision            String
+  createdAt           DateTime @default(now())
+
+  submission CourseFinalProjectSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewer   User                         @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, reviewerId])
+  @@index([reviewerId, createdAt(sort: Desc)])
+  @@map("course_final_project_reviews")
 }
 
 // ─── SUBSCRIPTION & PAYMENT ───────────────────────────────────────────────────

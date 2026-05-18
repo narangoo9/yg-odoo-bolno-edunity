@@ -88,6 +88,13 @@ const ROLE_LABELS: Record<UserRole, string> = {
   SUPER_ADMIN: "Super admin",
 };
 
+function subscriptionPlanLabel(plan?: string | null): string {
+  const normalized = (plan ?? "STANDARD").toUpperCase();
+  if (normalized === "PREMIUM") return "Premium";
+  if (normalized === "PRO") return "Pro";
+  return "Standard · Үнэгүй";
+}
+
 interface SidebarProps {
   role: UserRole;
   xp?: number;
@@ -468,7 +475,9 @@ export function DashboardSidebar({
                 <p className="truncate text-[12px] font-bold leading-tight text-foreground group-hover:text-violet-700 dark:group-hover:text-violet-300 transition-colors">
                   {userName || "Хэрэглэгч"}
                 </p>
-                <p className="text-[10px] text-muted-foreground">{ROLE_LABELS[role]}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {role === "USER" ? subscriptionPlanLabel(subscriptionPlan) : ROLE_LABELS[role]}
+                </p>
               </div>
               <User size={13} className="shrink-0 text-muted-foreground/60 group-hover:text-violet-600 transition-colors" />
             </button>

@@ -17,8 +17,12 @@ export function assertStripeBillingConfigured(planId: PlanId): string {
 
   const priceId =
     planId === "PREMIUM"
-      ? env.stripePremiumPriceId || env.stripePremiumMonthlyPriceId
-      : env.stripeProPriceId || env.stripeProMonthlyPriceId;
+      ? env.stripePremiumPriceId ||
+        env.stripePremiumMonthlyPriceId ||
+        env.stripeStudentMonthlyPriceId
+      : env.stripeProPriceId ||
+        env.stripeProMonthlyPriceId ||
+        env.stripeInstructorMonthlyPriceId;
 
   if (!priceId) {
     throw new Error(

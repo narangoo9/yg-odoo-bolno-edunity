@@ -2,7 +2,8 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { completeCourseSectionInDB } from "@/lib/learning/progress";
+import { completeCourseSectionInDB, updateSectionWatchProgress } from "@/lib/learning/progress";
+import { assertSectionWatchComplete } from "@/lib/learning/section-watch";
 import { canAccessLearningItem } from "@/lib/marketplace-access";
 import { getMarketplacePlan } from "@/lib/marketplace-access";
 import { ok, unauthorized, badRequest, forbidden, serverError } from "@/shared/utils/api-response";
@@ -10,6 +11,8 @@ import { ok, unauthorized, badRequest, forbidden, serverError } from "@/shared/u
 const schema = z.object({
   courseId: z.string().min(1),
   sectionId: z.string().min(1),
+  lastPositionSec: z.number().int().min(0).optional(),
+  watchedDeltaSec: z.number().int().min(0).max(3600).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -21,7 +24,7 @@ export async function POST(req: NextRequest) {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return badRequest("Буруу оролт", parsed.error.flatten().fieldErrors);
 
-    const { courseId, sectionId } = parsed.data;
+    const { courseId, sectionId, lastPositionSec, watchedDeltaSec } = parsed.data;
 
     // Verify enrollment
     const [enrollment, subscription] = await Promise.all([
@@ -51,6 +54,19 @@ export async function POST(req: NextRequest) {
     if (!canAccessLearningItem(plan, sectionIndex, totalSections)) {
       return forbidden("Энэ section таны багцад нээгдээгүй байна.");
     }
+
+    if (lastPositionSec != null) {
+      await updateSectionWatchProgress(
+        session.user.id,
+        courseId,
+        sectionId,
+        lastPositionSec,
+        watchedDeltaSec ?? 0,
+      );
+    }
+
+    const watchCheck = await assertSectionWatchComplete(session.user.id, courseId, sectionId);
+    if (!watchCheck.ok) return forbidden(watchCheck.message);
 
     const result = await completeCourseSectionInDB(session.user.id, courseId, sectionId);
     return ok(result);
