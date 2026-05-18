@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { rateLimit } from "@/lib/cache";
+import { sensitiveRateLimit } from "@/lib/cache";
 import { getAgentContext } from "@/lib/agent/agent-context";
 import { runAgent } from "@/lib/agent/agent-engine";
 
@@ -29,11 +29,11 @@ export async function POST(req: NextRequest) {
   // ── Rate limit (per user or per IP for anonymous) ──────────────────────────
   const rateLimitKey = userId
     ? `ai-agent:${userId}`
-    : `ai-agent:anon:${req.headers.get("x-forwarded-for") ?? "unknown"}`;
+    : `ai-agent:anon:${req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown"}`;
 
   try {
-    const { success } = await rateLimit(rateLimitKey, 60, 3600, "fail-open");
-    if (!success) {
+    const rate = await sensitiveRateLimit(rateLimitKey, userId ? 60 : 20, 3600);
+    if (!rate.success) {
       return NextResponse.json(
         {
           reply: "AI хүсэлтийн лимит хэтэрлээ. 1 цагийн дараа дахин оролдоно уу.",
@@ -46,7 +46,16 @@ export async function POST(req: NextRequest) {
       );
     }
   } catch {
-    /* rate limiter unavailable → allow through (fail-open) */
+    return NextResponse.json(
+      {
+        reply: "AI үйлчилгээ түр хүрэлцэхгүй байна. Дараа дахин оролдоно уу.",
+        intent: "GENERAL_HELP",
+        actions: [],
+        suggestions: [],
+        mode: "fallback",
+      },
+      { status: 503 },
+    );
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────

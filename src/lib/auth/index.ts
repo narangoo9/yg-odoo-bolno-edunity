@@ -117,6 +117,35 @@ const nextAuthResult = NextAuth({
   adapter: PrismaAdapter(db) as Adapter,
   providers,
   events: {
+    async createUser({ user }) {
+      if (!user.id || !user.email) return;
+      const token = crypto.randomUUID();
+      const appUrl = env.appUrl || env.nextAuthUrl || "http://localhost:3000";
+
+      try {
+        await db.verificationToken.create({
+          data: {
+            token,
+            type: "email_verify",
+            userId: user.id,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        });
+
+        const { sendEmail } = await import("@/lib/email");
+        await sendEmail({
+          to: user.email,
+          subject: "EduNity имэйл баталгаажуулалт",
+          template: "verify-email",
+          data: {
+            name: user.name ?? "EduNity хэрэглэгч",
+            verifyUrl: `${appUrl}/verify-email?token=${token}`,
+          },
+        }).catch(() => null);
+      } catch (error) {
+        console.error("[auth] createUser verification email failed:", error);
+      }
+    },
     // Fires once per (user, provider) on first OAuth link. New Google users are
     // created with the DB default status PENDING_VERIFICATION — but Google has
     // already verified the email, so we activate them immediately.
@@ -128,8 +157,7 @@ const nextAuthResult = NextAuth({
         await db.user.update({
           where: { id: user.id },
           data: {
-            status: "ACTIVE",
-            emailVerified: verifiedAt ? new Date(verifiedAt) : new Date(),
+            emailVerified: verifiedAt ? new Date(verifiedAt) : null,
           },
         });
       } catch (error) {
@@ -152,7 +180,7 @@ const nextAuthResult = NextAuth({
       if (existing?.id && existing.status === "PENDING_VERIFICATION") {
         await db.user.update({
           where: { id: existing.id },
-          data: { status: "ACTIVE", emailVerified: new Date() },
+          data: { status: "PENDING_VERIFICATION", emailVerified: null },
           select: { id: true },
         });
       }

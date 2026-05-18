@@ -9,11 +9,8 @@ import {
   revalidateUserNotifications,
   revalidateUserSidebar,
 } from "@/lib/dashboard-cache";
-import {
-  planFromStripePriceId,
-  stripeStatusToSubscriptionStatus,
-  syncStripeSubscription,
-} from "@/lib/stripe/subscription-sync";
+import { syncStripeSubscription } from "@/lib/stripe/subscription-sync";
+import { claimStripeWebhookEvent } from "@/lib/stripe/webhook-idempotency";
 
 export async function POST(req: NextRequest) {
   // Public signed endpoint: Stripe authenticates requests with stripe-signature.
@@ -38,12 +35,35 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const isNewEvent = await claimStripeWebhookEvent(event.id, event.type);
+    if (!isNewEvent) {
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     switch (event.type) {
       // ── CHECKOUT COMPLETED ──────────────────────────────────────────────────
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const meta = session.metadata ?? {};
         const { userId, type, orderId } = meta;
+
+        if (session.payment_status !== "paid") break;
+
+        if (
+          userId &&
+          session.client_reference_id &&
+          session.client_reference_id !== userId
+        ) {
+          console.error("Stripe webhook user mismatch", {
+            eventId: event.id,
+            userId,
+            clientReferenceId: session.client_reference_id,
+          });
+          break;
+        }
 
         // ── Order-based purchase (course / program bundle) ──
         if (orderId && userId) {
@@ -53,6 +73,21 @@ export async function POST(req: NextRequest) {
           });
 
           if (order && order.status === "PENDING") {
+            const expectedMinor = Math.round(Number(order.finalAmount) * 100);
+            if (
+              session.amount_total != null &&
+              expectedMinor > 0 &&
+              session.amount_total < expectedMinor
+            ) {
+              console.error("Stripe webhook amount mismatch for order", {
+                eventId: event.id,
+                orderId,
+                expectedMinor,
+                paidMinor: session.amount_total,
+              });
+              break;
+            }
+
             await db.$transaction(async (tx) => {
               // Mark order paid
               await tx.order.update({
@@ -148,6 +183,33 @@ export async function POST(req: NextRequest) {
         // ── Legacy single-course purchase (backward compat) ──
         else if (type === "course_purchase" && userId && meta.courseId) {
           const courseId = meta.courseId;
+          const course = await db.course.findUnique({
+            where: { id: courseId },
+            select: { price: true, discountPrice: true, currency: true },
+          });
+          if (!course) break;
+
+          const expectedAmount = Number(course.discountPrice ?? course.price);
+          const paidAmount = (session.amount_total ?? 0) / 100;
+          if (expectedAmount > 0 && paidAmount + 0.01 < expectedAmount) {
+            console.error("Stripe webhook course price mismatch", {
+              eventId: event.id,
+              courseId,
+              expectedAmount,
+              paidAmount,
+            });
+            break;
+          }
+
+          const paymentIntentId = session.payment_intent as string;
+          const existingPayment = paymentIntentId
+            ? await db.payment.findUnique({
+                where: { stripePaymentId: paymentIntentId },
+                select: { id: true },
+              })
+            : null;
+          if (existingPayment) break;
+
           await db.$transaction([
             db.enrollment.upsert({
               where: { studentId_courseId: { studentId: userId, courseId } },
@@ -207,24 +269,24 @@ export async function POST(req: NextRequest) {
       // ── SUBSCRIPTION UPDATED ────────────────────────────────────────────────
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
-        const priceId = sub.items.data[0]?.price.id ?? "";
-        const plan = planFromStripePriceId(priceId);
         const subscriptions = await db.subscription.findMany({
           where: { stripeSubscriptionId: sub.id },
           select: { userId: true },
         });
 
-        await db.subscription.updateMany({
-          where: { stripeSubscriptionId: sub.id },
-          data: {
-            plan,
-            status: stripeStatusToSubscriptionStatus(sub.status),
-            stripePriceId: priceId,
-            currentPeriodEnd: new Date(sub.current_period_end * 1000),
-            cancelAtPeriodEnd: sub.cancel_at_period_end,
-          },
-        });
-        subscriptions.forEach((subscription) => revalidateUserDashboard(subscription.userId));
+        for (const subscription of subscriptions) {
+          const user = await db.user.findUnique({
+            where: { id: subscription.userId },
+            select: { stripeCustomerId: true },
+          });
+          await syncStripeSubscription({
+            userId: subscription.userId,
+            stripeCustomerId:
+              typeof sub.customer === "string" ? sub.customer : user?.stripeCustomerId,
+            stripeSubscription: sub,
+          });
+          revalidateUserDashboard(subscription.userId);
+        }
         break;
       }
 

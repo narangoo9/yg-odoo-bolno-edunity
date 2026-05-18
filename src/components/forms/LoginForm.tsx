@@ -7,7 +7,6 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
 import { loginSchema, type LoginInput } from "@/modules/auth/domain/schemas";
-import { useOnboardingStore } from "@/lib/onboarding/onboardingStore";
 import { cn } from "@/lib/utils";
 
 const AUTH_BTN =
@@ -56,7 +55,6 @@ export function LoginForm() {
   );
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
-  const { onboardingCompleted, getNextIncompleteStep } = useOnboardingStore();
 
   useEffect(() => {
     let cancelled = false;
@@ -104,13 +102,6 @@ export function LoginForm() {
       } else {
         setServerError("Нэвтрэх үед алдаа гарлаа. Дахин оролдоно уу.");
       }
-      return;
-    }
-
-    if (!onboardingCompleted && !callbackUrl) {
-      const nextStep = getNextIncompleteStep();
-      router.replace(`/onboarding/${nextStep}`);
-      router.refresh();
       return;
     }
 

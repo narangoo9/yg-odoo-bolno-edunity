@@ -23,7 +23,7 @@ export type LeaderboardRow = {
 
 async function fetchLeaderboard(orderField: "totalXp" | "weeklyXp"): Promise<LeaderboardRow[]> {
   const entries = await db.leaderboardEntry.findMany({
-    take: 50,
+    take: 100,
     orderBy: { [orderField]: "desc" },
     select: {
       id: true,
@@ -34,13 +34,21 @@ async function fetchLeaderboard(orderField: "totalXp" | "weeklyXp"): Promise<Lea
       rank: true,
       weeklyRank: true,
       updatedAt: true,
-      user: {
-        select: { id: true, name: true, avatarUrl: true, streak: true, level: true },
-      },
     },
   });
 
-  return entries.filter((e): e is LeaderboardRow => Boolean(e.user));
+  const users = await db.user.findMany({
+    where: { id: { in: [...new Set(entries.map((entry) => entry.userId))] } },
+    select: { id: true, name: true, avatarUrl: true, streak: true, level: true },
+  });
+  const usersById = new Map(users.map((user) => [user.id, user]));
+
+  return entries
+    .flatMap((entry) => {
+      const user = usersById.get(entry.userId);
+      return user ? [{ ...entry, user }] : [];
+    })
+    .slice(0, 50);
 }
 
 export function getCachedGlobalLeaderboard() {

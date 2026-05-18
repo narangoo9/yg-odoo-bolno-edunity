@@ -31,6 +31,18 @@ const createNextConfig = (phase: string): NextConfig => {
   return {
     output: "standalone",
 
+    // Harmless dev warning from @prisma/instrumentation → OpenTelemetry dynamic requires (Sentry tracing).
+    webpack: (config) => {
+      config.ignoreWarnings = [
+        ...(config.ignoreWarnings ?? []),
+        {
+          module: /@opentelemetry\/instrumentation/,
+          message: /Critical dependency: the request of a dependency is an expression/,
+        },
+      ];
+      return config;
+    },
+
     images: {
       remotePatterns: [
         { protocol: "https", hostname: "**.cloudinary.com" },

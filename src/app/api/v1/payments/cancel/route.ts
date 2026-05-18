@@ -35,13 +35,19 @@ export async function POST() {
       }
     }
 
-    // Mark as cancelled in DB
+    // Keep access until Stripe ends the period; webhook will set CANCELLED.
     await db.subscription.update({
       where: { userId: session.user.id },
-      data: { status: "CANCELLED" },
+      data: {
+        cancelAtPeriodEnd: true,
+        ...(subscription.stripeSubscriptionId ? {} : { status: "CANCELLED" }),
+      },
     });
 
-    return NextResponse.json({ success: true, message: "Захиалга амжилттай цуцлагдлаа" });
+    return NextResponse.json({
+      success: true,
+      message: "Захиалга таны хугацааны төгсгөлд цуцлагдана.",
+    });
   } catch (err) {
     console.error("[CANCEL_SUBSCRIPTION]", err);
     return NextResponse.json({ error: "Серверийн алдаа гарлаа" }, { status: 500 });

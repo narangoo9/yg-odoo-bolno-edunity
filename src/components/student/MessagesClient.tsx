@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useTransition } from "react";
+import { useState, useRef, useEffect, useTransition, useCallback, useMemo } from "react";
 import {
   Hash, Send, Search, Users, Smile, Image as ImageIcon,
   Plus, MoreVertical, X, ChevronRight, BookOpen,
@@ -12,7 +12,6 @@ import { formatDistanceToNow } from "date-fns";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { MascotImage } from "@/components/brand/MascotImage";
 import {
-  createSupabaseChatClient,
   createSupabaseRealtimeClient,
   type ChatMessageRow,
 } from "@/lib/supabase/client";
@@ -347,19 +346,6 @@ export function RecommendationBanner() {
 }
 
 // ── MAIN COMPONENT ─────────────────────────────────────────────────────────────
-async function getRealtimeToken() {
-  const response = await fetch("/api/supabase/realtime-token", {
-    method: "GET",
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Unable to start realtime chat.");
-  }
-
-  return response.json() as Promise<{ token: string; userId: string; expiresAt: string }>;
-}
-
 export function MessagesClient({
   currentUserId, currentChatUserId, currentUser, enrollments, channelMessages, dms,
 }: Props) {
@@ -381,69 +367,95 @@ export function MessagesClient({
   const inputRef  = useRef<HTMLInputElement>(null);
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localMessagesRef = useRef<ChannelMessage[]>(channelMessages);
 
-  const memberByChatId = new Map<string, User>();
-  memberByChatId.set(currentChatUserId, currentUser);
-  enrollments.forEach(({ course }) => {
-    memberByChatId.set(course.instructor.chatUserId, course.instructor);
-    course.enrollments.forEach(({ student }) => memberByChatId.set(student.chatUserId, student));
-  });
+  const memberByChatId = useMemo(() => {
+    const map = new Map<string, User>();
+    map.set(currentChatUserId, currentUser);
+    enrollments.forEach(({ course }) => {
+      map.set(course.instructor.chatUserId, course.instructor);
+      course.enrollments.forEach(({ student }) => map.set(student.chatUserId, student));
+    });
+    return map;
+  }, [currentChatUserId, currentUser, enrollments]);
 
-  const mapSupabaseMessage = (row: ChatMessageRow): ChannelMessage => ({
-    id: row.id,
-    body: row.content,
-    createdAt: new Date(row.created_at),
-    contentId: row.conversation_id,
-    author: memberByChatId.get(row.sender_id) ?? {
-      id: row.sender_id,
-      chatUserId: row.sender_id,
-      name: "Unknown user",
-      avatarUrl: null,
+  const mapSupabaseMessage = useCallback(
+    (row: ChatMessageRow): ChannelMessage => ({
+      id: row.id,
+      body: row.content,
+      createdAt: new Date(row.created_at),
+      contentId: row.conversation_id,
+      author: memberByChatId.get(row.sender_id) ?? {
+        id: row.sender_id,
+        chatUserId: row.sender_id,
+        name: "Unknown user",
+        avatarUrl: null,
+      },
+      status: "sent",
+    }),
+    [memberByChatId],
+  );
+
+  const loadMessages = useCallback(
+    async (courseId: string, conversationId: string, after?: string) => {
+      const params = new URLSearchParams({ courseId, conversationId });
+      if (after) params.set("after", after);
+
+      const response = await fetch(`/api/v1/messages?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Unable to load messages.");
+      }
+
+      const data = await response.json() as { messages?: ChatMessageRow[] };
+      return (data.messages ?? []).map(row => mapSupabaseMessage(row));
     },
-    status: "sent",
-  });
+    [mapSupabaseMessage],
+  );
+
+  const mergeMessages = useCallback((messages: ChannelMessage[]) => {
+    if (messages.length === 0) return;
+    setLocalMessages(prev => {
+      const byId = new Map(prev.map(message => [message.id, message]));
+      messages.forEach(message => byId.set(message.id, message));
+      return Array.from(byId.values()).sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+    });
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [active, localMessages]);
 
   useEffect(() => {
+    localMessagesRef.current = localMessages;
+  }, [localMessages]);
+
+  useEffect(() => {
     if (active?.type !== "course" || !active.conversationId) return;
 
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
+    const activeCourseId = active.id;
     const activeConversationId = active.conversationId;
 
     async function connect() {
       try {
         const conversationId = activeConversationId;
         setChatError(null);
-        let canUsePostgresChanges = false;
-
         try {
-          const { token } = await getRealtimeToken();
+          const loadedMessages = await loadMessages(activeCourseId, conversationId);
           if (cancelled) return;
-
-          const supabaseWithAuth = createSupabaseChatClient(token);
-          const { data, error } = await supabaseWithAuth
-            .from("messages")
-            .select("id, conversation_id, sender_id, content, created_at, read_at")
-            .eq("conversation_id", conversationId)
-            .order("created_at", { ascending: true })
-            .limit(200);
-
-          if (error) throw error;
-          if (cancelled) return;
-
-          const loadedMessages = (data ?? []).map(row => mapSupabaseMessage(row as ChatMessageRow));
           setLocalMessages(prev => [
             ...prev.filter(message => message.contentId !== conversationId),
             ...loadedMessages,
           ]);
-          canUsePostgresChanges = true;
         } catch (error) {
           if (!cancelled) {
-            console.warn("Supabase message history unavailable; using realtime broadcast only.", error);
+            console.warn("Message history unavailable; using realtime broadcast only.", error);
+            setChatError(error instanceof Error ? error.message : "Unable to load messages.");
           }
         }
 
@@ -456,34 +468,11 @@ export function MessagesClient({
             },
           });
 
-        if (canUsePostgresChanges) {
-          channel.on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "public",
-              table: "messages",
-              filter: `conversation_id=eq.${conversationId}`,
-            },
-            payload => {
-              const nextMessage = mapSupabaseMessage(payload.new as ChatMessageRow);
-              setLocalMessages(prev => {
-                if (prev.some(message => message.id === nextMessage.id)) return prev;
-                return [...prev, nextMessage];
-              });
-            },
-          );
-        }
-
         channel
           .on("broadcast", { event: "message" }, payload => {
             const row = payload.payload as ChatMessageRow | undefined;
             if (!row?.id || row.sender_id === currentChatUserId) return;
-            const nextMessage = mapSupabaseMessage(row);
-            setLocalMessages(prev => {
-              if (prev.some(message => message.id === nextMessage.id)) return prev;
-              return [...prev, nextMessage];
-            });
+            mergeMessages([mapSupabaseMessage(row)]);
           })
           .on("broadcast", { event: "typing" }, payload => {
             const userId = payload.payload?.userId as string | undefined;
@@ -505,7 +494,7 @@ export function MessagesClient({
               channel?.track({ userId: currentChatUserId, onlineAt: new Date().toISOString() });
             }
             if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-              setChatError("Realtime chat connection failed. Check Supabase env and RLS settings.");
+              setChatError("Realtime chat connection failed. Messages will continue syncing shortly.");
             }
           });
 
@@ -518,9 +507,26 @@ export function MessagesClient({
     }
 
     connect();
+    const pollInterval = window.setInterval(async () => {
+      try {
+        const latest = localMessagesRef.current
+          .filter(message => message.contentId === activeConversationId && !message.id.startsWith("opt-"))
+          .at(-1);
+        const messages = await loadMessages(activeCourseId, activeConversationId, latest?.createdAt
+          ? new Date(latest.createdAt).toISOString()
+          : undefined);
+        if (!cancelled) {
+          mergeMessages(messages);
+          if (messages.length > 0) setChatError(null);
+        }
+      } catch {
+        // Realtime broadcast is still the primary path; polling is a silent fallback.
+      }
+    }, 3000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(pollInterval);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       realtimeChannelRef.current = null;
       setOnlineUserIds(new Set());
@@ -529,7 +535,7 @@ export function MessagesClient({
         channel.unsubscribe();
       }
     };
-  }, [active?.conversationId, active?.type, currentChatUserId]);
+  }, [active?.conversationId, active?.id, active?.type, currentChatUserId, loadMessages, mapSupabaseMessage, mergeMessages]);
 
   const activeMessages = active?.type === "course"
     ? localMessages.filter(m => m.contentId === active.conversationId)
@@ -551,14 +557,15 @@ export function MessagesClient({
 
   const unreadCounts: Record<string, number> = {};
   enrollments.forEach(({ course }) => {
-    const count = channelMessages.filter(
-      m => m.contentId === course.id && m.author.id !== currentUserId,
+    const count = localMessages.filter(
+      m => m.contentId === course.chatConversationId && m.author.id !== currentUserId,
     ).length;
     if (count > 0) unreadCounts[course.id] = count;
   });
 
   const sendSupabaseMessage = (body: string) => {
     if (active?.type !== "course" || !active.conversationId) return;
+    const courseId = active.id;
     const conversationId = active.conversationId;
     const tempId = `opt-${crypto.randomUUID()}`;
     const optimistic: ChannelMessage = {
@@ -573,24 +580,22 @@ export function MessagesClient({
 
     startTransition(async () => {
       try {
-        const { token } = await getRealtimeToken();
-        const supabase = createSupabaseChatClient(token);
-        const { data, error } = await supabase
-          .from("messages")
-          .insert({
-            conversation_id: conversationId,
-            sender_id: currentChatUserId,
+        const response = await fetch("/api/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            courseId,
+            conversationId,
             content: body,
-          })
-          .select("id, conversation_id, sender_id, content, created_at, read_at")
-          .single();
-
-        if (error) throw error;
-        const savedMessage = mapSupabaseMessage(data as ChatMessageRow);
+          }),
+        });
+        if (!response.ok) throw new Error("Message failed");
+        const data = await response.json() as { message: ChatMessageRow };
+        const savedMessage = mapSupabaseMessage(data.message);
         realtimeChannelRef.current?.send({
           type: "broadcast",
           event: "message",
-          payload: data as ChatMessageRow,
+          payload: data.message,
         });
         setLocalMessages(prev => {
           const withoutTemp = prev.filter(message => message.id !== tempId);

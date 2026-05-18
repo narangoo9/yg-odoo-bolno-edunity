@@ -73,6 +73,7 @@ export function LessonChat({
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingStartSentRef = useRef(false);
 
   const typingLabel = useMemo(() => {
     const names = Object.values(typingUsers);
@@ -156,10 +157,26 @@ export function LessonChat({
     socket.on("typing:start", handleTypingStart);
     socket.on("typing:stop", handleTypingStop);
     socket.on("message:error", handleMessageError);
-    socket.on("connect_error", (connectError) => {
+    const handleConnectError = async (connectError: Error) => {
+      const message = connectError.message.toLowerCase();
+      if (message.includes("unauthorized") || message.includes("jwt")) {
+        try {
+          const response = await fetch("/api/v1/socket-token", { cache: "no-store" });
+          const body = (await response.json()) as TokenResponse;
+          if (response.ok && body.token) {
+            socket.auth = { token: body.token };
+            socket.connect();
+            return;
+          }
+        } catch {
+          /* fall through */
+        }
+      }
       setStatus("error");
       setError(connectError.message);
-    });
+    };
+
+    socket.on("connect_error", handleConnectError);
 
     connect();
 
@@ -173,7 +190,7 @@ export function LessonChat({
       socket.off("typing:start", handleTypingStart);
       socket.off("typing:stop", handleTypingStop);
       socket.off("message:error", handleMessageError);
-      socket.off("connect_error");
+      socket.off("connect_error", handleConnectError);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [courseId, currentUserId, lessonId]);
@@ -186,11 +203,15 @@ export function LessonChat({
     const socket = getLessonSocket();
 
     if (!socket.connected) return;
-    if (value.trim()) socket.emit("typing:start", { lessonId });
+    if (value.trim() && !typingStartSentRef.current) {
+      socket.emit("typing:start", { lessonId });
+      typingStartSentRef.current = true;
+    }
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
     typingTimeoutRef.current = setTimeout(() => {
       socket.emit("typing:stop", { lessonId });
+      typingStartSentRef.current = false;
     }, 900);
   }
 

@@ -205,39 +205,62 @@ export async function getInstructorAnalytics(instructorId: string) {
 export async function getInstructorCourseStats(instructorId: string) {
   const courses = await db.course.findMany({
     where: { instructorId },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      status: true,
+      coverImage: true,
+      thumbnailUrl: true,
+      sourceType: true,
       _count: { select: { enrollments: true, reviews: true, sections: true } },
-      reviews: { select: { rating: true } },
-      enrollments: {
-        select: { status: true },
-      },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return courses.map((c) => ({
-    id: c.id,
-    title: c.title,
-    slug: c.slug,
-    status: c.status,
-    coverImage: c.coverImage,
-    thumbnailUrl: c.thumbnailUrl,
-    sourceType: c.sourceType,
-    sectionCount: c._count.sections,
-    enrollmentCount: c._count.enrollments,
-    completedCount: c.enrollments.filter((e) => e.status === "COMPLETED").length,
-    reviewCount: c._count.reviews,
-    averageRating:
-      c.reviews.length > 0 ? c.reviews.reduce((s, r) => s + r.rating, 0) / c.reviews.length : 0,
-    completionRate:
-      c._count.enrollments > 0
-        ? Math.round(
-            (c.enrollments.filter((e) => e.status === "COMPLETED").length /
-              c._count.enrollments) *
-              100
-          )
-        : 0,
-  }));
+  const courseIds = courses.map((c) => c.id);
+  if (courseIds.length === 0) return [];
+
+  const [completedByCourse, ratingByCourse] = await Promise.all([
+    db.enrollment.groupBy({
+      by: ["courseId"],
+      where: { courseId: { in: courseIds }, status: "COMPLETED" },
+      _count: { _all: true },
+    }),
+    db.review.groupBy({
+      by: ["courseId"],
+      where: { courseId: { in: courseIds } },
+      _avg: { rating: true },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const completedMap = new Map(completedByCourse.map((r) => [r.courseId, r._count._all]));
+  const ratingMap = new Map(
+    ratingByCourse.map((r) => [r.courseId, { avg: r._avg.rating ?? 0, count: r._count._all }]),
+  );
+
+  return courses.map((c) => {
+    const enrollmentCount = c._count.enrollments;
+    const completedCount = completedMap.get(c.id) ?? 0;
+    const rating = ratingMap.get(c.id);
+    return {
+      id: c.id,
+      title: c.title,
+      slug: c.slug,
+      status: c.status,
+      coverImage: c.coverImage,
+      thumbnailUrl: c.thumbnailUrl,
+      sourceType: c.sourceType,
+      sectionCount: c._count.sections,
+      enrollmentCount,
+      completedCount,
+      reviewCount: rating?.count ?? c._count.reviews,
+      averageRating: Number((rating?.avg ?? 0).toFixed(1)),
+      completionRate:
+        enrollmentCount > 0 ? Math.round((completedCount / enrollmentCount) * 100) : 0,
+    };
+  });
 }
 
 // â”€â”€â”€ STUDENT ANALYTICS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

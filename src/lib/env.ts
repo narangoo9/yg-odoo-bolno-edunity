@@ -122,6 +122,14 @@ if (missingProductionVars.length > 0) {
   }
 }
 
+if (!raw.AUTH_SECRET && !raw.NEXTAUTH_SECRET && raw.NODE_ENV === "development") {
+  console.warn(
+    "[env] AUTH_SECRET is not set. Using a local-only development fallback. " +
+      "Sessions will reset when this value changes. Set AUTH_SECRET in .env for stable local auth " +
+      "(generate: openssl rand -base64 32). Production requires AUTH_SECRET and will fail to start without it.",
+  );
+}
+
 export const env = {
   nodeEnv: raw.NODE_ENV,
   isProduction,

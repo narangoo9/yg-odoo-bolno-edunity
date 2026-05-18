@@ -131,6 +131,26 @@ async function verifySocketUser(socket: Socket): Promise<SocketUser> {
   };
 }
 
+async function getCachedLessonAccess(
+  socket: Socket,
+  user: SocketUser,
+  lessonId: string,
+  courseId?: string,
+): Promise<LessonAccess> {
+  const cacheKey = `${lessonId}:${courseId ?? ""}`;
+  const cache =
+    (socket.data.lessonAccessCache as Map<string, LessonAccess> | undefined) ??
+    new Map<string, LessonAccess>();
+  socket.data.lessonAccessCache = cache;
+
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const access = await assertLessonAccess(user, lessonId, courseId);
+  cache.set(cacheKey, access);
+  return access;
+}
+
 async function assertLessonAccess(user: SocketUser, lessonId: string, courseId?: string): Promise<LessonAccess> {
   const lesson = await prisma.lesson.findUnique({
     where: { id: lessonId },
@@ -231,7 +251,7 @@ io.on("connection", (socket) => {
   socket.on("lesson:join", async (rawData) => {
     try {
       const data = joinLessonSchema.parse(rawData);
-      const access = await assertLessonAccess(user, data.lessonId, data.courseId);
+      const access = await getCachedLessonAccess(socket, user, data.lessonId, data.courseId);
       const room = lessonRoom(access.lessonId);
 
       socket.join(room);
@@ -302,7 +322,7 @@ io.on("connection", (socket) => {
       }
 
       const data = sendMessageSchema.parse(rawData);
-      const access = await assertLessonAccess(user, data.lessonId, data.courseId);
+      const access = await getCachedLessonAccess(socket, user, data.lessonId, data.courseId);
 
       userLastMessage.set(user.userId, now);
 

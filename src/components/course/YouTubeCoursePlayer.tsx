@@ -193,7 +193,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
 
   useEffect(() => {
     if (activeChapter) setOpenChapterId(activeChapter.id);
-  }, [activeChapter?.id]);
+  }, [activeChapter]);
 
   // Load DB state on mount; fall back to localStorage if API fails
   useEffect(() => {

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export type MascotVariant =
@@ -44,15 +45,14 @@ export function MascotImage({
       style={{ width: size, height: size }}
       aria-hidden={alt.length === 0 ? "true" : undefined}
     >
-      <img
+      <Image
         src={MASCOT_SRCS[variant]}
         alt={alt}
-        width={size}
-        height={size}
-        loading={priority ? "eager" : "lazy"}
-        decoding="async"
-        draggable={false}
-        className={cn("absolute inset-0 h-full w-full object-contain", imageClassName)}
+        fill
+        unoptimized
+        priority={priority}
+        sizes={`${size}px`}
+        className={cn("object-contain", imageClassName)}
       />
     </div>
   );

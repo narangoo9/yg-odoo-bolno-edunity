@@ -248,7 +248,7 @@ export function RegisterForm({ referralCode = "" }: { referralCode?: string }) {
                   setGoogleSubmitting(true);
                   try {
                     const res = await signIn("google", {
-                      callbackUrl: "/onboarding/welcome",
+                      callbackUrl: "/dashboard",
                       redirect: false,
                     });
                     if (res?.error) {

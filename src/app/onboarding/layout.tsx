@@ -4,21 +4,22 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { EduNityLogo } from "@/components/layout/EduNityLogo";
 import { OnboardingStepper } from "@/components/onboarding/OnboardingStepper";
-import { OnboardingSkipLink } from "@/components/onboarding/OnboardingSkipLink";
 
 export default async function OnboardingLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  if (session.user.role === "STUDENT") {
-    const user = await db.user
-      .findUnique({
-        where: { id: session.user.id },
-        select: { onboardingCompleted: true },
-      })
-      .catch(() => null);
-    if (user?.onboardingCompleted) redirect("/student");
-  }
+  const user = await db.user
+    .findUnique({
+      where: { id: session.user.id },
+      select: { role: true, status: true, onboardingCompleted: true },
+    })
+    .catch(() => null);
+
+  if (!user) redirect("/login");
+  if (user.status !== "ACTIVE") redirect("/verify-email");
+  if (user.role !== "STUDENT") redirect("/dashboard");
+  if (user.onboardingCompleted) redirect("/student");
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#ede9fe] via-[#f5f2ff] to-[#faf8ff]">
@@ -44,7 +45,7 @@ export default async function OnboardingLayout({ children }: { children: React.R
 
         <OnboardingStepper />
 
-        <OnboardingSkipLink />
+        <div className="w-[96px]" />
       </header>
 
       {/* Page content */}

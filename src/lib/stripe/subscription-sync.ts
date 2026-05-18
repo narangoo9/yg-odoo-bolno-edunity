@@ -53,8 +53,9 @@ export async function syncStripeSubscription({
   metadataPlan?: string;
 }) {
   const priceId = stripeSubscription.items.data[0]?.price.id ?? "";
-  const metadataPlanValue = planFromCheckoutMeta(metadataPlan);
-  const plan = metadataPlanValue !== "STANDARD" ? metadataPlanValue : planFromStripePriceId(priceId);
+  // Plan tier must come from verified Stripe price ID, not checkout metadata.
+  const plan = planFromStripePriceId(priceId);
+  void metadataPlan;
   const status = stripeStatusToSubscriptionStatus(stripeSubscription.status);
 
   await db.$transaction(async (tx) => {

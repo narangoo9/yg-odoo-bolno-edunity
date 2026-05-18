@@ -11,7 +11,7 @@ const INSTRUCTOR_ROUTES = ["/instructor"];
 const PUBLIC_FILE = /\.(.*)$/;
 
 // Routes a PENDING_VERIFICATION user is allowed to visit
-const VERIFICATION_ALLOWED_PREFIXES = ["/verify-email", "/login", "/register", "/api/auth", "/api/v1/auth"];
+const VERIFICATION_ALLOWED_PREFIXES = ["/verify-email", "/onboarding", "/login", "/register", "/api/auth", "/api/v1/auth"];
 
 const { auth } = NextAuth(authConfig);
 

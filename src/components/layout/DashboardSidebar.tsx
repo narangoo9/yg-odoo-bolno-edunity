@@ -91,10 +91,10 @@ const navConfig: Record<UserRole, NavItem[]> = {
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
-  STUDENT: "Суралцагч",
-  INSTRUCTOR: "Багш",
-  ORG_ADMIN: "Байгууллага",
-  SUPER_ADMIN: "Супер Админ",
+  STUDENT: "User",
+  INSTRUCTOR: "Company",
+  ORG_ADMIN: "Company",
+  SUPER_ADMIN: "Super admin",
 };
 
 interface SidebarProps {

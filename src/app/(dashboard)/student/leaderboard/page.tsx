@@ -84,34 +84,32 @@ async function getLeaderboardEntriesForUsers(userIds: string[]) {
   const ids = [...new Set(userIds)];
   if (ids.length === 0) return [];
 
-  const entries = await db.leaderboardEntry.findMany({
-    where: { userId: { in: ids } },
-    select: {
-      id: true,
-      userId: true,
-      weeklyXp: true,
-      monthlyXp: true,
-      totalXp: true,
-      rank: true,
-      weeklyRank: true,
-      updatedAt: true,
-      user: { select: { id: true, name: true, avatarUrl: true, streak: true, level: true } },
-    },
-  });
+  const [entries, users] = await Promise.all([
+    db.leaderboardEntry.findMany({
+      where: { userId: { in: ids } },
+      select: {
+        id: true,
+        userId: true,
+        weeklyXp: true,
+        monthlyXp: true,
+        totalXp: true,
+        rank: true,
+        weeklyRank: true,
+        updatedAt: true,
+      },
+    }),
+    db.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, avatarUrl: true, streak: true, level: true },
+    }),
+  ]);
+  const usersById = new Map(users.map((user) => [user.id, user]));
 
   return entries
-    .filter((entry) => entry.user)
-    .map((entry) => ({
-      id: entry.id,
-      userId: entry.userId,
-      weeklyXp: entry.weeklyXp,
-      monthlyXp: entry.monthlyXp,
-      totalXp: entry.totalXp,
-      rank: entry.rank,
-      weeklyRank: entry.weeklyRank,
-      updatedAt: entry.updatedAt,
-      user: entry.user!,
-    }))
+    .flatMap((entry) => {
+      const user = usersById.get(entry.userId);
+      return user ? [{ ...entry, user }] : [];
+    })
     .sort((a, b) => b.totalXp - a.totalXp);
 }
 

@@ -102,9 +102,14 @@ export async function deleteCourse(id: string) {
   const course = await db.course.findUnique({ where: { id } });
   if (!course) return { error: "Курс олдсонгүй" };
 
-  if (course.instructorId !== session.user.id && session.user.role !== "SUPER_ADMIN") {
-    return { error: "Эрхгүй" };
-  }
+  const canDelete =
+    course.instructorId === session.user.id ||
+    session.user.role === "SUPER_ADMIN" ||
+    (session.user.role === "ORG_ADMIN" &&
+      course.organizationId &&
+      course.organizationId === session.user.organizationId);
+
+  if (!canDelete) return { error: "Эрхгүй" };
 
   await db.course.update({ where: { id }, data: { status: "ARCHIVED" } });
 
@@ -564,6 +569,25 @@ export async function enrollCourse(input: EnrollCourseInput) {
       where: { userId: session.user.id },
       select: { plan: true, status: true },
     });
+
+    const listPrice = Number(course.discountPrice ?? course.price ?? 0);
+    if (listPrice > 0) {
+      const hasSubscriptionAccess = hasActiveCourseAccess(
+        subscription?.plan,
+        subscription?.status,
+      );
+      const completedPayment = await db.payment.findFirst({
+        where: {
+          userId: session.user.id,
+          courseId,
+          status: "COMPLETED",
+        },
+        select: { id: true },
+      });
+      if (!hasSubscriptionAccess && !completedPayment) {
+        return { error: "Энэ курсын төлбөр төлөгдөөгүй байна. Төлбөр төлсний дараа бүртгүүлнэ үү." };
+      }
+    }
 
     const enrollment = await db.enrollment.create({
       data: {

@@ -76,12 +76,18 @@ export async function POST(req: NextRequest) {
     const { challengeId, selectedIdx } = parsed.data;
 
     // Challenge олох + correctIdx авах
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
     const challenge = await db.dailyChallenge.findUnique({
       where: { id: challengeId },
-      select: { correctIdx: true, xpReward: true },
+      select: { correctIdx: true, xpReward: true, date: true },
     });
 
     if (!challenge) return badRequest("Challenge not found");
+    if (challenge.date.getTime() !== today.getTime()) {
+      return badRequest("This challenge is not available today");
+    }
 
     // Давтаж хариулсан эсэх
     const existing = await db.dailyChallengeCompletion.findUnique({

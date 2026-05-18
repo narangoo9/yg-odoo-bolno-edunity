@@ -84,6 +84,10 @@ export default async function VerifyEmailPage({ searchParams }: Props) {
     );
   }
 
+  if (session?.user?.id) {
+    redirect("/onboarding/welcome");
+  }
+
   return (
     <div className="text-center py-4 animate-fade-up">
       <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">

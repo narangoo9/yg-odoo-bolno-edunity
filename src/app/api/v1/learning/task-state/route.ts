@@ -8,7 +8,8 @@ import { ok, unauthorized, badRequest, forbidden, serverError } from "@/shared/u
 const schema = z.object({
   courseId: z.string().min(1),
   sectionId: z.string().min(1),
-  state: z.enum(["not-started", "draft", "submitted", "completed"]),
+  // Client may only set draft states; submitted/completed are set by task-submit and grading flows.
+  state: z.enum(["not-started", "draft"]),
 });
 
 export async function POST(req: NextRequest) {

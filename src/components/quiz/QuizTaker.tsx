@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -56,26 +56,7 @@ export function QuizTaker(props: Props) {
   const [result, setResult] = useState<{ score: number; maxScore: number; percentage: number; passed: boolean } | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Timer
-  useEffect(() => {
-    if (stage !== "taking" || timeLeft === null) return;
-    if (timeLeft <= 0) { handleSubmit(); return; }
-    const t = setTimeout(() => setTimeLeft((prev) => (prev ?? 0) - 1), 1000);
-    return () => clearTimeout(t);
-  }, [timeLeft, stage]);
-
-  const handleStart = () => {
-    startTransition(async () => {
-      const result = await startQuizAttempt(props.quiz.id);
-      if ("error" in result) return;
-      setAttemptId(result.data!.attempt.id);
-      setQuestions(result.data!.questions);
-      setStage("taking");
-      if (props.quiz.timeLimit) setTimeLeft(props.quiz.timeLimit * 60);
-    });
-  };
-
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (!attemptId) return;
     startTransition(async () => {
       const payload = questions.map((q) => ({
@@ -87,6 +68,28 @@ export function QuizTaker(props: Props) {
       if ("error" in result) return;
       setResult(result.data!);
       setStage("result");
+    });
+  }, [attemptId, questions, answers, textAnswers]);
+
+  // Timer
+  useEffect(() => {
+    if (stage !== "taking" || timeLeft === null) return;
+    if (timeLeft <= 0) {
+      handleSubmit();
+      return;
+    }
+    const t = setTimeout(() => setTimeLeft((prev) => (prev ?? 0) - 1), 1000);
+    return () => clearTimeout(t);
+  }, [timeLeft, stage, handleSubmit]);
+
+  const handleStart = () => {
+    startTransition(async () => {
+      const result = await startQuizAttempt(props.quiz.id);
+      if ("error" in result) return;
+      setAttemptId(result.data!.attempt.id);
+      setQuestions(result.data!.questions);
+      setStage("taking");
+      if (props.quiz.timeLimit) setTimeLeft(props.quiz.timeLimit * 60);
     });
   };
 

@@ -164,7 +164,7 @@ export default async function SettingsPage() {
           />
           <InfoRow
             label="Хэрэглэгчийн төрөл"
-            value={user.role}
+            value={user.role === "SUPER_ADMIN" ? "Super admin" : user.role === "ORG_ADMIN" || user.role === "INSTRUCTOR" ? "Company" : "User"}
           />
         </div>
       </section>
