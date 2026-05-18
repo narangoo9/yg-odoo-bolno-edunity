@@ -89,16 +89,17 @@ enum QuizAttemptStatus {
 }
 
 enum SubscriptionPlan {
+  // Legacy values (kept for DB compatibility; app maps to STANDARD/PREMIUM/PRO)
   FREE
   STUDENT
   INSTRUCTOR
   ORGANIZATION
   ENTERPRISE
-  // Platform feature tiers (Standard/Premium/Pro replace role-based plans going forward)
   BASIC
-  STANDARD
-  PREMIUM
-  PRO
+  // Platform billing tiers (canonical)
+  STANDARD // default — free tier
+  PREMIUM // ₮9,900 / month
+  PRO // ₮19,900 / month
 }
 
 enum ProgramStatus {

@@ -9,7 +9,10 @@ import {
   revalidateUserNotifications,
   revalidateUserSidebar,
 } from "@/lib/dashboard-cache";
-import { syncStripeSubscription } from "@/lib/stripe/subscription-sync";
+import {
+  downgradeUserToStandard,
+  syncStripeSubscription,
+} from "@/lib/stripe/subscription-sync";
 import { claimStripeWebhookEvent } from "@/lib/stripe/webhook-idempotency";
 
 export async function POST(req: NextRequest) {
@@ -249,7 +252,7 @@ export async function POST(req: NextRequest) {
             userId,
             stripeCustomerId: typeof session.customer === "string" ? session.customer : session.customer?.id,
             stripeSubscription,
-            metadataPlan: meta.plan,
+            metadataPlan: meta.planId ?? meta.plan,
           });
 
           await db.notification.create({
@@ -293,27 +296,50 @@ export async function POST(req: NextRequest) {
       // ── SUBSCRIPTION DELETED ────────────────────────────────────────────────
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
-        await db.subscription.updateMany({
-          where: { stripeSubscriptionId: sub.id },
-          data: { status: "CANCELLED", cancelAtPeriodEnd: false },
-        });
-
-        // Notify user
         const dbSub = await db.subscription.findFirst({
           where: { stripeSubscriptionId: sub.id },
           select: { userId: true },
         });
         if (dbSub) {
+          await downgradeUserToStandard(dbSub.userId);
           await db.notification.create({
             data: {
               userId: dbSub.userId,
               type: "SYSTEM",
               title: "Захиалга цуцлагдлаа",
-              body: "Таны платформын захиалга цуцлагдлаа.",
+              body: "Таны багц цуцлагдсан. Одоогийн хугацаа дуусах хүртэл ашиглах боломжтой.",
             },
           });
           revalidateUserDashboard(dbSub.userId);
           revalidateUserNotifications(dbSub.userId);
+        }
+        break;
+      }
+
+      case "invoice.payment_succeeded": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId =
+          typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+        if (!customerId) break;
+
+        const user = await db.user.findUnique({
+          where: { stripeCustomerId: customerId },
+          select: { id: true },
+        });
+        if (!user) break;
+
+        const subscriptionId =
+          typeof invoice.subscription === "string"
+            ? invoice.subscription
+            : invoice.subscription?.id;
+        if (subscriptionId) {
+          const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+          await syncStripeSubscription({
+            userId: user.id,
+            stripeCustomerId: customerId,
+            stripeSubscription,
+          });
+          revalidateUserDashboard(user.id);
         }
         break;
       }

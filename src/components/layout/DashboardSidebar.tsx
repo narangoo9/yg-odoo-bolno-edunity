@@ -13,7 +13,6 @@ import {
   GraduationCap,
   MessageSquare,
   Settings,
-  BookMarked,
   Users,
   Building2,
   ShieldCheck,

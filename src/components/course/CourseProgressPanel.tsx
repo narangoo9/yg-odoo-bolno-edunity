@@ -12,7 +12,6 @@ import {
   Users,
 } from "lucide-react";
 import { CertificateRequirements } from "@/components/certificate/CertificateRequirements";
-import { cn } from "@/lib/utils";
 
 type LessonRef = { id: string; title: string } | null;
 

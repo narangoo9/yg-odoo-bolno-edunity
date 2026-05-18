@@ -1,22 +1,21 @@
 import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getStripe } from "@/lib/stripe";
 import { getAppUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
-import { env } from "@/lib/env";
+import {
+  assertStripeBillingConfigured,
+  checkoutPlanIdSchema,
+  getPlanPriceMnt,
+} from "@/lib/stripe/plan-prices";
+import { getPlanById } from "@/lib/billing/plans";
 
-/* Maps plan+billing → Stripe price ID.
-   Falls back to STUDENT/INSTRUCTOR IDs if plan-specific IDs are not set. */
-const PRICE_MAP: Record<string, Record<string, string>> = {
-  PREMIUM: {
-    monthly: env.stripePremiumMonthlyPriceId || env.stripeStudentMonthlyPriceId,
-    yearly: env.stripePremiumYearlyPriceId || env.stripeStudentYearlyPriceId,
-  },
-  PRO: {
-    monthly: env.stripeProMonthlyPriceId || env.stripeInstructorMonthlyPriceId,
-    yearly: env.stripeProYearlyPriceId || env.stripeInstructorYearlyPriceId,
-  },
-};
+const bodySchema = z.object({
+  planId: checkoutPlanIdSchema,
+  /** @deprecated use planId */
+  plan: checkoutPlanIdSchema.optional(),
+});
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,21 +25,27 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { plan, billing } = body as { plan: string; billing: string };
+    const parsed = bodySchema.safeParse(body);
 
-    if (!["PREMIUM", "PRO"].includes(plan)) {
-      return NextResponse.json({ error: "Буруу төлөвлөгөө" }, { status: 400 });
-    }
-    if (!["monthly", "yearly"].includes(billing)) {
-      return NextResponse.json({ error: "Буруу тооцооллын хугацаа" }, { status: 400 });
-    }
-
-    const priceId = PRICE_MAP[plan]?.[billing];
-    if (!priceId) {
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Stripe price ID тохируулагдаагүй байна. .env файлаа шалгана уу." },
-        { status: 400 }
+        { error: "Зөвхөн Premium эсвэл Pro багцыг сонгоно уу." },
+        { status: 400 },
       );
+    }
+
+    const planId = parsed.data.planId ?? parsed.data.plan!;
+    const plan = getPlanById(planId);
+    let priceId: string;
+
+    try {
+      priceId = assertStripeBillingConfigured(planId);
+    } catch (configError) {
+      const message =
+        configError instanceof Error
+          ? configError.message
+          : "Stripe price ID тохируулагдаагүй байна.";
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     const stripe = getStripe();
@@ -59,14 +64,15 @@ export async function POST(req: NextRequest) {
       cancel_url: `${appUrl}/student/upgrade?subscription=cancelled`,
       metadata: {
         userId: session.user.id,
-        plan,
-        billing,
+        planId,
+        priceMnt: String(getPlanPriceMnt(planId)),
+        source: "edunity",
         type: "subscription",
       },
       client_reference_id: session.user.id,
     });
 
-    return NextResponse.json({ url: checkoutSession.url });
+    return NextResponse.json({ url: checkoutSession.url, plan: plan.name });
   } catch (err) {
     console.error("[SUBSCRIBE_ROUTE]", err);
     return NextResponse.json({ error: "Серверийн алдаа гарлаа" }, { status: 500 });

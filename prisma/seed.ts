@@ -19,16 +19,77 @@ async function main() {
   const passwordHash = await bcrypt.hash("Student@1234", 10);
   const instructorHash = await bcrypt.hash("Instructor@1234", 10);
 
+  const standardUser = await prisma.user.upsert({
+    where: { email: "student@elearn.mn" },
+    update: { status: "ACTIVE", role: "USER" },
+    create: {
+      name: "Demo Student (Standard)",
+      email: "student@elearn.mn",
+      passwordHash,
+      role: "USER",
+      status: "ACTIVE",
+    },
+  });
+
+  const premiumUser = await prisma.user.upsert({
+    where: { email: "premium@elearn.mn" },
+    update: { status: "ACTIVE", role: "USER" },
+    create: {
+      name: "Demo Student (Premium)",
+      email: "premium@elearn.mn",
+      passwordHash,
+      role: "USER",
+      status: "ACTIVE",
+    },
+  });
+
+  const proUser = await prisma.user.upsert({
+    where: { email: "pro@elearn.mn" },
+    update: { status: "ACTIVE", role: "USER" },
+    create: {
+      name: "Demo Student (Pro)",
+      email: "pro@elearn.mn",
+      passwordHash,
+      role: "USER",
+      status: "ACTIVE",
+    },
+  });
+
+  const periodEnd = new Date();
+  periodEnd.setMonth(periodEnd.getMonth() + 1);
+
   await Promise.all([
-    prisma.user.upsert({
-      where: { email: "student@elearn.mn" },
-      update: { status: "ACTIVE", role: "USER" },
+    prisma.subscription.upsert({
+      where: { userId: standardUser.id },
+      update: { plan: "STANDARD", status: "ACTIVE" },
       create: {
-        name: "Demo Student",
-        email: "student@elearn.mn",
-        passwordHash,
-        role: "USER",
+        userId: standardUser.id,
+        plan: "STANDARD",
         status: "ACTIVE",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: periodEnd,
+      },
+    }),
+    prisma.subscription.upsert({
+      where: { userId: premiumUser.id },
+      update: { plan: "PREMIUM", status: "ACTIVE" },
+      create: {
+        userId: premiumUser.id,
+        plan: "PREMIUM",
+        status: "ACTIVE",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: periodEnd,
+      },
+    }),
+    prisma.subscription.upsert({
+      where: { userId: proUser.id },
+      update: { plan: "PRO", status: "ACTIVE" },
+      create: {
+        userId: proUser.id,
+        plan: "PRO",
+        status: "ACTIVE",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: periodEnd,
       },
     }),
     prisma.user.upsert({
@@ -60,8 +121,10 @@ async function main() {
   });
 
   console.log("Seeded demo users and archived old fixed-section courses.");
-  console.log("Student login: student@elearn.mn / Student@1234");
-  console.log("Instructor login: instructor@elearn.mn / Instructor@1234");
+  console.log("Standard: student@elearn.mn / Student@1234");
+  console.log("Premium: premium@elearn.mn / Student@1234");
+  console.log("Pro: pro@elearn.mn / Student@1234");
+  console.log("Instructor: instructor@elearn.mn / Instructor@1234");
 }
 
 main()

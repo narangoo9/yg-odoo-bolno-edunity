@@ -651,7 +651,7 @@ export default async function HomePage() {
                       </p>
                       <div className="flex items-baseline gap-1 mb-2">
                         <span className="text-3xl font-black text-[#111827] dark:text-[#F8FAFC]">
-                          {formatTierPrice(tier, "monthly")}
+                          {formatTierPrice(tier)}
                         </span>
                         {tier.monthlyPrice > 0 && (
                           <span className="text-sm text-[#6B7280] dark:text-[#A1A1AA]">/сар</span>

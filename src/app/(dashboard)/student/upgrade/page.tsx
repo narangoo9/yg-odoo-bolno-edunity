@@ -16,5 +16,5 @@ export default async function UpgradePage() {
     select: { plan: true, status: true, currentPeriodEnd: true },
   });
 
-  return <UpgradeClient currentPlan={subscription?.plan ?? "FREE"} />;
+  return <UpgradeClient currentPlan={subscription?.plan ?? "STANDARD"} />;
 }

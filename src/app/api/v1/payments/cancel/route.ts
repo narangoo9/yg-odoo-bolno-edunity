@@ -15,7 +15,7 @@ export async function POST() {
       select: { id: true, plan: true, status: true, stripeSubscriptionId: true },
     });
 
-    if (!subscription || subscription.plan === "FREE") {
+    if (!subscription || subscription.plan === "STANDARD" || subscription.plan === "FREE") {
       return NextResponse.json({ error: "Идэвхтэй захиалга байхгүй" }, { status: 400 });
     }
 

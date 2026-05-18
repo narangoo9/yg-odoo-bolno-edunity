@@ -6,11 +6,8 @@ import {
   Check, Crown, Sparkles, BookOpen, Brain, Award, Zap, Trophy, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  BILLING_COMPARISON,
-  getBillingTier,
-  tierYearlySavings,
-} from "@/lib/pricing/billing-plans";
+import { BILLING_COMPARISON, getBillingTier } from "@/lib/pricing/billing-plans";
+import { normalizePlanId } from "@/lib/billing/plans";
 
 const STANDARD_TIER = getBillingTier("STANDARD");
 const PREMIUM_TIER = getBillingTier("PREMIUM");
@@ -31,20 +28,19 @@ function FeatureValue({ value }: { value: boolean | string }) {
 }
 
 export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
-  const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
   const [loading, setLoading] = useState<"PREMIUM" | "PRO" | null>(null);
+  const normalizedCurrent = normalizePlanId(currentPlan);
 
-  const isCurrent = (planId: string) =>
-    planId === currentPlan || (currentPlan === "FREE" && planId === "STANDARD");
+  const isCurrent = (planId: string) => planId === normalizedCurrent;
 
-  async function handleUpgrade(plan: "PREMIUM" | "PRO") {
+  async function handleUpgrade(planId: "PREMIUM" | "PRO") {
     if (loading) return;
-    setLoading(plan);
+    setLoading(planId);
     try {
       const res = await fetch("/api/v1/payments/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan, billing }),
+        body: JSON.stringify({ planId }),
       });
       const data = await res.json();
       if (data.url) {
@@ -59,10 +55,8 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
     }
   }
 
-  const premiumPrice =
-    billing === "monthly" ? PREMIUM_TIER.monthlyPrice : PREMIUM_TIER.yearlyPrice;
-  const proPrice =
-    billing === "monthly" ? PRO_TIER.monthlyPrice : PRO_TIER.yearlyPrice;
+  const premiumPrice = PREMIUM_TIER.monthlyPrice;
+  const proPrice = PRO_TIER.monthlyPrice;
 
   return (
     <>
@@ -134,30 +128,7 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
             </p>
           </div>
 
-          {/* Billing toggle */}
-          <div className="relative flex justify-center mt-6">
-            <div className="flex items-center gap-1 p-1 bg-white/10 backdrop-blur-sm rounded-2xl">
-              {(["monthly", "yearly"] as const).map(b => (
-                <button
-                  key={b}
-                  onClick={() => setBilling(b)}
-                  className={cn(
-                    "px-5 py-2 min-h-[44px] rounded-xl text-[12px] font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-violet-800",
-                    billing === b
-                      ? "bg-white text-violet-700 shadow-md"
-                      : "text-violet-200 hover:text-white"
-                  )}
-                >
-                  {b === "monthly" ? "Сарын" : "Жилийн"}
-                  {b === "yearly" && (
-                    <span className="ml-1.5 px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-bold rounded-md">
-                      -17%
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="relative mt-4 text-[12px] text-violet-200/90">Сар бүрийн төлбөр · нуугдмал хураамжгүй</p>
         </div>
 
         {/* ── PLAN CARDS ── */}
@@ -226,13 +197,8 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
             <div>
               <div className="flex items-end gap-1">
                 <span className="text-3xl font-black text-violet-900 dark:text-violet-100">₮{premiumPrice.toLocaleString()}</span>
-                <span className="text-xs text-violet-400 dark:text-violet-500 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
+                <span className="text-xs text-violet-400 dark:text-violet-500 mb-1">/сар</span>
               </div>
-              {billing === "yearly" && tierYearlySavings(PREMIUM_TIER) > 0 && (
-                <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-                  Жилд ₮{tierYearlySavings(PREMIUM_TIER).toLocaleString()} хэмнэнэ
-                </p>
-              )}
             </div>
 
             <button
@@ -287,13 +253,8 @@ export function UpgradeClient({ currentPlan }: { currentPlan: string }) {
             <div>
               <div className="flex items-end gap-1">
                 <span className="text-3xl font-black text-amber-900 dark:text-amber-100">₮{proPrice.toLocaleString()}</span>
-                <span className="text-xs text-amber-400 dark:text-amber-500 mb-1">/{billing === "monthly" ? "сар" : "жил"}</span>
+                <span className="text-xs text-amber-400 dark:text-amber-500 mb-1">/сар</span>
               </div>
-              {billing === "yearly" && tierYearlySavings(PRO_TIER) > 0 && (
-                <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-                  Жилд ₮{tierYearlySavings(PRO_TIER).toLocaleString()} хэмнэнэ
-                </p>
-              )}
             </div>
 
             <button

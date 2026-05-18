@@ -63,9 +63,7 @@ export async function POST(req: NextRequest) {
     ]);
     if (!enrollment) return forbidden("Бүртгэл олдсонгүй");
 
-    const marketplacePlan = getMarketplacePlan(subscription?.plan, subscription?.status);
-    // ALL_ACCESS is unlimited like PRO for note limits
-    const plan = marketplacePlan === "ALL_ACCESS" ? "PRO" : marketplacePlan;
+    const plan = getMarketplacePlan(subscription?.plan, subscription?.status);
     const limit = getNoteLimit(plan);
 
     if (limit !== null) {

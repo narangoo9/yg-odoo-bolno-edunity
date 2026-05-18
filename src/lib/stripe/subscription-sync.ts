@@ -1,31 +1,10 @@
 import type Stripe from "stripe";
-import type { SubscriptionPlan, SubscriptionStatus } from "@prisma/client";
+import type { SubscriptionStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { env } from "@/lib/env";
+import { type PlanId, DEFAULT_PLAN_ID } from "@/lib/billing/plans";
+import { planFromCheckoutMeta, planFromStripePriceId } from "@/lib/stripe/plan-prices";
 
-export function planFromStripePriceId(priceId: string): Extract<SubscriptionPlan, "STANDARD" | "PREMIUM" | "PRO"> {
-  const map: Record<string, Extract<SubscriptionPlan, "STANDARD" | "PREMIUM" | "PRO">> = {
-    [env.stripeStandardPriceId]: "STANDARD",
-    [env.stripePremiumPriceId]: "PREMIUM",
-    [env.stripeProPriceId]: "PRO",
-    [env.stripePremiumMonthlyPriceId]: "PREMIUM",
-    [env.stripePremiumYearlyPriceId]: "PREMIUM",
-    [env.stripeProMonthlyPriceId]: "PRO",
-    [env.stripeProYearlyPriceId]: "PRO",
-    [env.stripeStudentMonthlyPriceId]: "PREMIUM",
-    [env.stripeStudentYearlyPriceId]: "PREMIUM",
-    [env.stripeInstructorMonthlyPriceId]: "PRO",
-    [env.stripeInstructorYearlyPriceId]: "PRO",
-  };
-
-  delete map[""];
-  return map[priceId] ?? "STANDARD";
-}
-
-export function planFromCheckoutMeta(raw?: string): Extract<SubscriptionPlan, "STANDARD" | "PREMIUM" | "PRO"> {
-  if (raw === "PREMIUM" || raw === "PRO" || raw === "STANDARD") return raw;
-  return "STANDARD";
-}
+export { planFromStripePriceId, planFromCheckoutMeta };
 
 export function stripeStatusToSubscriptionStatus(status: string): SubscriptionStatus {
   const map: Record<string, SubscriptionStatus> = {
@@ -45,7 +24,7 @@ export async function syncStripeSubscription({
   userId,
   stripeCustomerId,
   stripeSubscription,
-  metadataPlan,
+  metadataPlan: _metadataPlan,
 }: {
   userId: string;
   stripeCustomerId?: string | null;
@@ -53,9 +32,8 @@ export async function syncStripeSubscription({
   metadataPlan?: string;
 }) {
   const priceId = stripeSubscription.items.data[0]?.price.id ?? "";
-  // Plan tier must come from verified Stripe price ID, not checkout metadata.
-  const plan = planFromStripePriceId(priceId);
-  void metadataPlan;
+  const plan: PlanId = planFromStripePriceId(priceId);
+  void _metadataPlan;
   const status = stripeStatusToSubscriptionStatus(stripeSubscription.status);
 
   await db.$transaction(async (tx) => {
@@ -92,6 +70,30 @@ export async function syncStripeSubscription({
   });
 
   return { plan, status, priceId };
+}
+
+export async function downgradeUserToStandard(userId: string) {
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+  await db.subscription.upsert({
+    where: { userId },
+    create: {
+      userId,
+      plan: DEFAULT_PLAN_ID,
+      status: "ACTIVE",
+      currentPeriodStart: now,
+      currentPeriodEnd: periodEnd,
+    },
+    update: {
+      plan: DEFAULT_PLAN_ID,
+      status: "CANCELLED",
+      stripeSubscriptionId: null,
+      stripePriceId: null,
+      cancelAtPeriodEnd: false,
+    },
+  });
 }
 
 export async function syncLatestStripeSubscriptionForUser({

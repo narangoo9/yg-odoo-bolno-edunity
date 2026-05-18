@@ -118,7 +118,7 @@ function sectionRange(section: CourseSection) {
   return `${formatSeconds(section.startSeconds)}${section.endSeconds != null ? ` - ${formatSeconds(section.endSeconds)}` : ""}`;
 }
 
-export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
+export function YouTubeCoursePlayer({ course, accessPlan = "STANDARD" }: Props) {
   const pathname = usePathname();
   const storagePrefix = `edunity-course-player:${course.id}`;
   const setPersistentVideo = usePersistentVideoStore((state) => state.setVideo);
@@ -721,7 +721,7 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
             <section
               className={cn(
                 "min-w-0 rounded-2xl border p-4 shadow-sm",
-                accessPlan === "FREE"
+                accessPlan === "STANDARD"
                   ? "border-slate-200 bg-slate-50"
                   : accessPlan === "PRO"
                     ? "border-amber-200 bg-amber-50"
@@ -733,20 +733,20 @@ export function YouTubeCoursePlayer({ course, accessPlan = "FREE" }: Props) {
                 <div
                   className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-xl",
-                    accessPlan === "FREE"
+                    accessPlan === "STANDARD"
                       ? "bg-slate-200 text-slate-500"
                       : accessPlan === "PRO"
                         ? "bg-amber-200 text-amber-700"
                         : "bg-violet-200 text-violet-700",
                   )}
                 >
-                  {accessPlan === "FREE" ? <Lock size={18} /> : <Award size={18} />}
+                  {accessPlan === "STANDARD" ? <Lock size={18} /> : <Award size={18} />}
                 </div>
                 <div className="min-w-0">
                   <p
                     className={cn(
                       "text-[15px] font-black",
-                      accessPlan === "FREE"
+                      accessPlan === "STANDARD"
                         ? "text-slate-700"
                         : accessPlan === "PRO"
                           ? "text-amber-700"
