@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Notes — EduNity" };
 export default async function NotesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "STUDENT") redirect("/student");
+  if (session.user.role !== "USER") redirect("/student");
 
   return <NotesClient userId={session.user.id} />;
 }

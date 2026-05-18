@@ -1,16 +1,14 @@
 import type { UserRole } from "@prisma/client";
 
 export const ROLES = {
-  STUDENT: "STUDENT",
-  INSTRUCTOR: "INSTRUCTOR",
-  ORG_ADMIN: "ORG_ADMIN",
+  USER: "USER",
+  COMPANY: "COMPANY",
   SUPER_ADMIN: "SUPER_ADMIN",
 } as const;
 
 const ROLE_HIERARCHY: Record<UserRole, number> = {
-  STUDENT: 0,
-  INSTRUCTOR: 1,
-  ORG_ADMIN: 2,
+  USER: 0,
+  COMPANY: 1,
   SUPER_ADMIN: 3,
 };
 
@@ -19,7 +17,7 @@ export function hasRole(userRole: UserRole, requiredRole: UserRole): boolean {
 }
 
 export function isAdminOrAbove(role: UserRole): boolean {
-  return hasRole(role, "ORG_ADMIN");
+  return hasRole(role, "COMPANY");
 }
 
 export function isSuperAdmin(role: UserRole): boolean {
@@ -34,8 +32,8 @@ export function canManageCourse(
   userOrgId?: string | null
 ): boolean {
   if (isSuperAdmin(userRole)) return true;
-  // Only instructors (or above) can manage their own courses
-  if (hasRole(userRole, "INSTRUCTOR") && instructorId === userId) return true;
-  if (userRole === "ORG_ADMIN" && orgId && orgId === userOrgId) return true;
+  // Company users can manage their own courses or courses inside their organization.
+  if (hasRole(userRole, "COMPANY") && instructorId === userId) return true;
+  if (userRole === "COMPANY" && orgId && orgId === userOrgId) return true;
   return false;
 }

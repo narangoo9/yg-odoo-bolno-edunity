@@ -6,12 +6,24 @@ import { getAppUrl } from "@/lib/app-url";
 import { RATE_LIMIT_UNAVAILABLE_MESSAGE, sensitiveRateLimit } from "@/lib/cache";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
-import { signOut } from "@/lib/auth";
+import { auth, signOut } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
 import { awardXP, XP_REWARDS } from "@/modules/gamification/application/gamification-service";
 import { XpAction } from "@prisma/client";
-import { registerSchema, orgOnboardSchema, forgotPasswordSchema, resetPasswordSchema } from "../domain/schemas";
-import type { RegisterInput, OrgOnboardInput, ForgotPasswordInput, ResetPasswordInput } from "../domain/schemas";
+import {
+  registerSchema,
+  googleCompleteSchema,
+  orgOnboardSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from "../domain/schemas";
+import type {
+  RegisterInput,
+  GoogleCompleteInput,
+  OrgOnboardInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
+} from "../domain/schemas";
 
 // ─── REGISTER ────────────────────────────────────────────────────────────────
 
@@ -22,7 +34,7 @@ export async function registerUser(input: RegisterInput) {
     return { error: parsed.error.flatten().fieldErrors };
   }
 
-  // Public signup is STUDENT only — instructors come via org invite
+  // Public signup creates USER accounts. Company users come via organization flows.
   const { name, email, password, referralCode } = parsed.data;
 
   const existingUser = await db.user.findFirst({
@@ -52,7 +64,7 @@ export async function registerUser(input: RegisterInput) {
         name,
         email,
         passwordHash,
-        role: "STUDENT",
+        role: "USER",
         status: "PENDING_VERIFICATION",
         referralCode: newReferralCode,
         referredById: referrer?.id ?? null,
@@ -143,6 +155,59 @@ export async function verifyEmail(token: string) {
       data: { usedAt: new Date() },
     }),
   ]);
+
+  return { success: true };
+}
+
+// ─── GOOGLE REGISTER COMPLETE ────────────────────────────────────────────────
+
+export async function completeGoogleRegistration(input: GoogleCompleteInput) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { error: { _form: ["Эхлээд Google-ээр нэвтэрнэ үү"] } };
+  }
+
+  const parsed = googleCompleteSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.flatten().fieldErrors };
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: {
+      id: true,
+      role: true,
+      status: true,
+      passwordHash: true,
+      onboardingCompleted: true,
+    },
+  });
+
+  if (!user) {
+    return { error: { _form: ["Хэрэглэгч олдсонгүй"] } };
+  }
+  if (user.role !== "USER") {
+    return { error: { _form: ["Энэ алхам зөвхөн хувь хүний бүртгэлд зориулагдсан"] } };
+  }
+  if (user.status !== "ACTIVE") {
+    return { error: { _form: ["Эхлээд имэйлээ баталгаажуулна уу"] } };
+  }
+  if (!user.onboardingCompleted) {
+    return { error: { _form: ["Эхлээд onboarding-оо дуусгана уу"] } };
+  }
+  if (user.passwordHash) {
+    return { success: true, alreadyComplete: true };
+  }
+
+  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      name: parsed.data.name,
+      passwordHash,
+    },
+    select: { id: true },
+  });
 
   return { success: true };
 }
@@ -245,7 +310,7 @@ export async function logout() {
 }
 
 // ─── ORGANIZATION ONBOARDING ─────────────────────────────────────────────────
-// Separate flow: creates Organization + first ORG_ADMIN. Not public registration.
+// Separate flow: creates Organization + first COMPANY account. Not public registration.
 
 export async function onboardOrganization(input: OrgOnboardInput) {
   const appUrl = getAppUrl();
@@ -283,7 +348,7 @@ export async function onboardOrganization(input: OrgOnboardInput) {
         name: adminName,
         email: adminEmail,
         passwordHash,
-        role: "ORG_ADMIN",
+        role: "COMPANY",
         status: "PENDING_VERIFICATION",
       },
     });

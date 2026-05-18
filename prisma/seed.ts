@@ -22,23 +22,23 @@ async function main() {
   await Promise.all([
     prisma.user.upsert({
       where: { email: "student@elearn.mn" },
-      update: { status: "ACTIVE", role: "STUDENT" },
+      update: { status: "ACTIVE", role: "USER" },
       create: {
         name: "Demo Student",
         email: "student@elearn.mn",
         passwordHash,
-        role: "STUDENT",
+        role: "USER",
         status: "ACTIVE",
       },
     }),
     prisma.user.upsert({
       where: { email: "instructor@elearn.mn" },
-      update: { status: "ACTIVE", role: "INSTRUCTOR" },
+      update: { status: "ACTIVE", role: "COMPANY" },
       create: {
         name: "Demo Instructor",
         email: "instructor@elearn.mn",
         passwordHash: instructorHash,
-        role: "INSTRUCTOR",
+        role: "COMPANY",
         status: "ACTIVE",
       },
     }),

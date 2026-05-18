@@ -1,7 +1,7 @@
-﻿import { db } from "@/lib/db";
+import { db } from "@/lib/db";
 import { startOfMonth, endOfMonth, subMonths, eachMonthOfInterval } from "date-fns";
 
-// â”€â”€â”€ SUPER ADMIN ANALYTICS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SUPER ADMIN ANALYTICS ────────────────────────────────────────────────────
 
 export async function getAdminOverview() {
   const [
@@ -15,7 +15,7 @@ export async function getAdminOverview() {
     newUsersThisMonth,
   ] = await Promise.all([
     db.user.count(),
-    db.user.count({ where: { role: "STUDENT", status: "ACTIVE" } }),
+    db.user.count({ where: { role: "USER", status: "ACTIVE" } }),
     db.course.count(),
     db.course.count({ where: { status: "PUBLISHED" } }),
     db.enrollment.count(),
@@ -147,8 +147,8 @@ export async function getUserGrowthByMonth(months = 6) {
       const range = { gte: startOfMonth(month), lte: endOfMonth(month) };
       const [total, students, instructors] = await Promise.all([
         db.user.count({ where: { createdAt: range } }),
-        db.user.count({ where: { createdAt: range, role: "STUDENT" } }),
-        db.user.count({ where: { createdAt: range, role: "INSTRUCTOR" } }),
+        db.user.count({ where: { createdAt: range, role: "USER" } }),
+        db.user.count({ where: { createdAt: range, role: "COMPANY" } }),
       ]);
       return {
         month: month.toLocaleDateString("mn-MN", { month: "short", year: "numeric" }),
@@ -160,7 +160,7 @@ export async function getUserGrowthByMonth(months = 6) {
   );
 }
 
-// â”€â”€â”€ INSTRUCTOR ANALYTICS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── INSTRUCTOR ANALYTICS ─────────────────────────────────────────────────────
 
 export async function getInstructorAnalytics(instructorId: string) {
   // Fetch instructor's course ids once, then run all aggregates in parallel.
@@ -263,7 +263,7 @@ export async function getInstructorCourseStats(instructorId: string) {
   });
 }
 
-// â”€â”€â”€ STUDENT ANALYTICS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── STUDENT ANALYTICS ────────────────────────────────────────────────────────
 
 export async function getStudentStats(studentId: string) {
   const [enrollments, completedCourses, certificates, completedLessons, quizAttempts, avgQuizScore] =

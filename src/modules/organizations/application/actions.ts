@@ -70,7 +70,7 @@ export async function inviteMember(input: InviteMemberInput) {
   }
 
   const token = randomUUID();
-  const userRole = role === "OWNER" || role === "ADMIN" ? "ORG_ADMIN" : "INSTRUCTOR";
+  const userRole = "COMPANY";
 
   await db.orgInvite.create({
     data: {
@@ -121,7 +121,7 @@ export async function acceptOrgInvite(token: string) {
   }
 
   const orgMemberRole: OrgMemberRole =
-    invite.role === "ORG_ADMIN" ? "ADMIN" : "INSTRUCTOR";
+    invite.role === "COMPANY" ? "ADMIN" : "INSTRUCTOR";
 
   await db.$transaction(async (tx) => {
     // Create OrganizationMember record

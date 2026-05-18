@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Аналитик" };
 export default async function InstructorAnalyticsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!["INSTRUCTOR", "ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) redirect("/student");
+  if (!["COMPANY", "COMPANY", "SUPER_ADMIN"].includes(session.user.role)) redirect("/student");
 
   const instructorId = session.user.id;
   const [analytics, courseStats] = await Promise.all([

@@ -26,7 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const certificateOrganizationId = cert.organizationId ?? cert.course?.organizationId ?? null;
   const orgAdminForCertificate =
-    session.user.role === "ORG_ADMIN" &&
+    session.user.role === "COMPANY" &&
     Boolean(certificateOrganizationId) &&
     certificateOrganizationId === session.user.organizationId;
   const canDownload =

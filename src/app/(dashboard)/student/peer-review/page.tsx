@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Хамтран дүгнэх" };
 export default async function PeerReviewPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "STUDENT") redirect("/student");
+  if (session.user.role !== "USER") redirect("/student");
 
   const [
     myCapstones,

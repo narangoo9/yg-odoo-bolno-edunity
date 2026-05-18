@@ -79,7 +79,7 @@ function CommentItem({
   const canDelete =
     comment.author.id === currentUserId ||
     userRole === "SUPER_ADMIN" ||
-    userRole === "ORG_ADMIN";
+    userRole === "COMPANY";
 
   return (
     <div className="flex gap-3">
@@ -237,7 +237,7 @@ export function DiscussionThread({ contentType, contentId }: Props) {
               key={c.id}
               comment={c}
               currentUserId={session?.user?.id ?? ""}
-              userRole={(session?.user as { role?: string })?.role ?? "STUDENT"}
+              userRole={(session?.user as { role?: string })?.role ?? "USER"}
               contentType={contentType}
               contentId={contentId}
               onRefresh={fetchComments}

@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Create Course from YouTube" };
 export default async function NewCoursePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!["INSTRUCTOR", "ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!["COMPANY", "COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/student");
   }
 

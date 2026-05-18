@@ -35,7 +35,7 @@ export function applyUserToToken(token: JWT, user?: AuthUserLike | null) {
 
 export function applyTokenToSession(session: Session, token: JWT) {
   session.user.id = (token.id as string) ?? token.sub ?? "";
-  session.user.role = (token.role as UserRole | undefined) ?? "STUDENT";
+  session.user.role = (token.role as UserRole | undefined) ?? "USER";
   session.user.status = (token.status as string) ?? "ACTIVE";
   session.user.organizationId = (token.organizationId as string | null) ?? null;
   if (typeof token.name === "string") {
@@ -44,6 +44,8 @@ export function applyTokenToSession(session: Session, token: JWT) {
   if ("picture" in token) {
     session.user.image = typeof token.picture === "string" ? token.picture : null;
   }
+  session.user.onboardingCompleted = Boolean(token.onboardingCompleted);
+  session.user.profileComplete = Boolean(token.profileComplete);
 
   return session;
 }

@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       const canManage =
         session?.user?.role === "SUPER_ADMIN" ||
         course.instructorId === session?.user?.id ||
-        (session?.user?.role === "ORG_ADMIN" && sameOrganization);
+        (session?.user?.role === "COMPANY" && sameOrganization);
 
       if (!canManage) return notFound("Course not found");
     }

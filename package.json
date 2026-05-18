@@ -22,6 +22,8 @@
     "db:indexes": "node scripts/apply-safe-indexes.mjs",
     "db:sync-migration-checksums": "node scripts/sync-migration-checksums.mjs",
     "db:seed": "tsx prisma/seed.ts",
+    "db:purge-test-users": "tsx scripts/purge-non-yt-users.ts",
+    "db:purge-test-users:confirm": "tsx scripts/purge-non-yt-users.ts --confirm",
     "db:studio": "prisma studio",
     "stripe:setup": "node scripts/setup-stripe.mjs",
     "test": "jest",

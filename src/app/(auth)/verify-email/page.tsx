@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { getDashboardHomeByRole } from "@/lib/dashboard-routes";
+import { getPostAuthRedirectPath } from "@/lib/auth/post-auth-redirect";
+import { db } from "@/lib/db";
 import { verifyEmail } from "@/modules/auth/application/actions";
 import { VerifyEmailPending } from "./VerifyEmailPending";
 
@@ -17,9 +18,20 @@ export default async function VerifyEmailPage({ searchParams }: Props) {
   const { token, sent, email } = await searchParams;
   const session = await auth();
 
-  // Fully verified user has no reason to be here
-  if (session?.user?.status === "ACTIVE") {
-    redirect(getDashboardHomeByRole(session.user.role));
+  // Google / идэвхжсэн хэрэглэгч энд ирэх шаардлагагүй
+  if (session?.user?.status === "ACTIVE" && session.user.id) {
+    const user = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        role: true,
+        status: true,
+        onboardingCompleted: true,
+        passwordHash: true,
+      },
+    });
+    if (user) {
+      redirect(getPostAuthRedirectPath(user));
+    }
   }
 
   // Authenticated but unverified — show the pending UI (no token needed)

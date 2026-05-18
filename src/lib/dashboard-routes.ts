@@ -1,9 +1,8 @@
 import type { UserRole } from "@prisma/client";
 
 export const dashboardHomeByRole: Record<UserRole, string> = {
-  STUDENT: "/student",
-  INSTRUCTOR: "/instructor",
-  ORG_ADMIN: "/org",
+  USER: "/student",
+  COMPANY: "/org",
   SUPER_ADMIN: "/admin",
 };
 
@@ -16,15 +15,13 @@ export function getDashboardHomeByRole(role?: string | null) {
 }
 
 export const settingsRouteByRole: Record<UserRole, string> = {
-  STUDENT: "/student/settings",
-  INSTRUCTOR: "/instructor/settings",
-  ORG_ADMIN: "/org/settings",
+  USER: "/student/settings",
+  COMPANY: "/org/settings",
   SUPER_ADMIN: "/admin/settings",
 };
 
 export const notificationsRouteByRole: Record<UserRole, string> = {
-  STUDENT: "/student/notifications",
-  INSTRUCTOR: "/instructor/notifications",
-  ORG_ADMIN: "/org/notifications",
+  USER: "/student/notifications",
+  COMPANY: "/org/notifications",
   SUPER_ADMIN: "/admin/notifications",
 };

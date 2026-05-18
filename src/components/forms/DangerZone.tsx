@@ -22,13 +22,15 @@ export function DangerZone() {
           title: "Account устгах боломжгүй",
           description: result?.error ?? "Дахин оролдоно уу.",
         });
+        setConfirming(false);
         setDeleting(false);
         return;
       }
 
-      await signOut({ callbackUrl: "/" });
+      await signOut({ callbackUrl: "/login" });
     } catch {
       toast({ type: "error", title: "Сүлжээний алдаа" });
+      setConfirming(false);
       setDeleting(false);
     }
   };
@@ -40,7 +42,7 @@ export function DangerZone() {
           <p className="text-sm font-medium text-foreground">Гарах</p>
           <p className="mt-0.5 text-xs text-muted-foreground">Энэ төхөөрөмжөөс гарах</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => signOut({ callbackUrl: "/" })}>
+        <Button variant="outline" size="sm" onClick={() => signOut({ callbackUrl: "/login" })}>
           <LogOut size={13} /> Гарах
         </Button>
       </div>
@@ -62,11 +64,17 @@ export function DangerZone() {
               Болих
             </Button>
             <Button size="sm" variant="destructive" disabled={deleting} onClick={handleDeleteAccount}>
-              {deleting ? "Устгаж байна..." : "Баталгаажуулах"}
+              {deleting ? "Устгаж байна..." : "Тийм, устгах"}
             </Button>
           </div>
         )}
       </div>
+
+      {confirming && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          Та үнэхээр бүртгэлээ устгахдаа итгэлтэй байна уу? Энэ үйлдлийг буцаах боломжгүй.
+        </p>
+      )}
     </div>
   );
 }

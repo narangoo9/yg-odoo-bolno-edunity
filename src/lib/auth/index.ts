@@ -1,7 +1,13 @@
 import NextAuth from "next-auth";
 import { headers as nextHeaders } from "next/headers";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { Adapter } from "next-auth/adapters";
+import { createAuthAdapter } from "@/lib/auth/adapter";
+import {
+  LoginOAuthOnlyError,
+  LoginSuspendedError,
+  LoginUserNotFoundError,
+  LoginWrongPasswordError,
+} from "@/lib/auth/credentials-errors";
 import type { Session } from "next-auth";
 import type { Provider } from "next-auth/providers";
 import { getToken } from "next-auth/jwt";
@@ -10,6 +16,7 @@ import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
+import { activateGoogleUser } from "@/lib/auth/activate-google-user";
 import { applyTokenToSession, applyUserToToken, authConfig, type AuthUserLike } from "@/lib/auth/config";
 import { loginSchema } from "@/modules/auth/domain/schemas";
 
@@ -84,11 +91,20 @@ providers.push(
         },
       });
 
-      if (!user || !user.passwordHash) return null;
-      if (user.status === "SUSPENDED") return null;
+      if (!user) {
+        throw new LoginUserNotFoundError();
+      }
+      if (!user.passwordHash) {
+        throw new LoginOAuthOnlyError();
+      }
+      if (user.status === "SUSPENDED") {
+        throw new LoginSuspendedError();
+      }
 
       const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-      if (!passwordMatch) return null;
+      if (!passwordMatch) {
+        throw new LoginWrongPasswordError();
+      }
 
       await db.user
         .update({
@@ -114,11 +130,19 @@ providers.push(
 const nextAuthResult = NextAuth({
   ...authConfig,
   secret: authSecret,
-  adapter: PrismaAdapter(db) as Adapter,
+  adapter: createAuthAdapter(db) as Adapter,
   providers,
   events: {
     async createUser({ user }) {
       if (!user.id || !user.email) return;
+      // Google OAuth — имэйл аль хэдийн баталгаажсан, verify имэйл илгээхгүй
+      if ((user as { emailVerified?: Date | string | null }).emailVerified) {
+        await activateGoogleUser(
+          user.id,
+          (user as { emailVerified?: Date | string | null }).emailVerified,
+        ).catch(() => null);
+        return;
+      }
       const token = crypto.randomUUID();
       const appUrl = env.appUrl || env.nextAuthUrl || "http://localhost:3000";
 
@@ -154,12 +178,7 @@ const nextAuthResult = NextAuth({
       const verifiedAt =
         (user as { emailVerified?: Date | string | null }).emailVerified ?? null;
       try {
-        await db.user.update({
-          where: { id: user.id },
-          data: {
-            emailVerified: verifiedAt ? new Date(verifiedAt) : null,
-          },
-        });
+        await activateGoogleUser(user.id, verifiedAt);
       } catch (error) {
         console.error("[auth] linkAccount activation failed:", error);
       }
@@ -171,18 +190,21 @@ const nextAuthResult = NextAuth({
       if (account?.provider !== "google" || !user?.email) return true;
       if (!isGoogleEmailVerified(profile)) return false;
 
+      const email = user.email.trim().toLowerCase();
       const existing = await db.user.findFirst({
-        where: { email: user.email.trim().toLowerCase() },
+        where: { email },
         select: { id: true, status: true },
       });
       if (existing?.status === "SUSPENDED") return false;
-      // Google has verified the email — activate any pending user
-      if (existing?.id && existing.status === "PENDING_VERIFICATION") {
-        await db.user.update({
-          where: { id: existing.id },
-          data: { status: "PENDING_VERIFICATION", emailVerified: null },
-          select: { id: true },
-        });
+
+      // Зөвхөн DB-д байгаа хэрэглэгч — шинэ Google хэрэглэгчийг linkAccount/createUser идэвхжүүлнэ.
+      // user.id нь signIn үед DB id биш байж болно → update алдаа → AccessDenied.
+      if (existing) {
+        try {
+          await activateGoogleUser(existing.id, new Date());
+        } catch (error) {
+          console.error("[auth] signIn activation failed:", error);
+        }
       }
       return true;
     },
@@ -205,13 +227,17 @@ const nextAuthResult = NextAuth({
             organizationId: true,
             avatarUrl: true,
             name: true,
+            onboardingCompleted: true,
+            passwordHash: true,
           },
         });
         if (!dbUser) {
           if (user && !(user as AuthUserLike).role) {
-            token.role = "STUDENT";
+            token.role = "USER";
             token.status = "ACTIVE";
             token.organizationId = null;
+            token.onboardingCompleted = false;
+            token.profileComplete = false;
           }
           return;
         }
@@ -220,6 +246,8 @@ const nextAuthResult = NextAuth({
         token.organizationId = dbUser.organizationId;
         token.name = dbUser.name;
         token.picture = dbUser.avatarUrl;
+        token.onboardingCompleted = dbUser.onboardingCompleted;
+        token.profileComplete = Boolean(dbUser.passwordHash);
       };
 
       if (user && userId) {
@@ -281,9 +309,11 @@ async function getServerSessionFromToken(): Promise<Session | null> {
       name: typeof token.name === "string" ? token.name : "",
       email: typeof token.email === "string" ? token.email : "",
       image: typeof token.picture === "string" ? token.picture : null,
-      role: token.role,
-      status: token.status,
-      organizationId: token.organizationId,
+      role: (token.role as Session["user"]["role"] | undefined) ?? "USER",
+      status: (token.status as string | undefined) ?? "ACTIVE",
+      organizationId: (token.organizationId as string | null | undefined) ?? null,
+      onboardingCompleted: Boolean(token.onboardingCompleted),
+      profileComplete: Boolean(token.profileComplete),
     },
     expires:
       typeof token.exp === "number"

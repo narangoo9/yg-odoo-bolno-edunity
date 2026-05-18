@@ -10,9 +10,8 @@ import { DeleteUserButton } from "@/components/admin/DeleteUserButton";
 export const metadata: Metadata = { title: "Хэрэглэгчид" };
 
 const roleLabels: Record<string, { label: string; variant: "default" | "success" | "warning" | "info" | "secondary" | "destructive" | "outline" }> = {
-  STUDENT:     { label: "User",        variant: "secondary"  },
-  INSTRUCTOR:  { label: "Company",     variant: "warning"     },
-  ORG_ADMIN:   { label: "Company",     variant: "warning"     },
+  USER:        { label: "User",        variant: "secondary"  },
+  COMPANY:     { label: "Company",     variant: "warning"     },
   SUPER_ADMIN: { label: "Super admin", variant: "destructive" },
 };
 
@@ -42,7 +41,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
         { email: { contains: sp.search, mode: "insensitive" as const } },
       ],
     }),
-    ...(sp.role && { role: sp.role as "STUDENT" | "ORG_ADMIN" | "SUPER_ADMIN" }),
+    ...(sp.role && { role: sp.role as "USER" | "COMPANY" | "SUPER_ADMIN" }),
   };
 
   const [users, total] = await Promise.all([
@@ -81,7 +80,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
           />
         </form>
         <div className="flex gap-2 flex-wrap">
-          {["", "STUDENT", "ORG_ADMIN", "SUPER_ADMIN"].map((r) => (
+          {["", "USER", "COMPANY", "SUPER_ADMIN"].map((r) => (
             <a key={r}
               href={`?${new URLSearchParams({ ...(sp.search ? { search: sp.search } : {}), ...(r ? { role: r } : {}) })}`}
               className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-colors ${

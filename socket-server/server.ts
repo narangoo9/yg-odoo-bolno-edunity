@@ -181,7 +181,7 @@ async function assertLessonAccess(user: SocketUser, lessonId: string, courseId?:
   const canManage =
     user.role === "SUPER_ADMIN" ||
     course.instructorId === user.userId ||
-    (user.role === "ORG_ADMIN" && Boolean(sameOrg));
+    (user.role === "COMPANY" && Boolean(sameOrg));
 
   if (!canManage) {
     const enrollment = await prisma.enrollment.findUnique({

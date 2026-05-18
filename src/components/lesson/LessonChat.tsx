@@ -3,6 +3,10 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Hash, Loader2, MessageCircle, Send, Smile, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  ChatConnectionStatus,
+  type ChatConnectionState,
+} from "@/components/chat/ChatConnectionStatus";
 import { getLessonSocket } from "@/lib/socket";
 import { cn, getInitials } from "@/lib/utils";
 
@@ -19,6 +23,8 @@ type LessonChatMessage = {
   text: string;
   createdAt: string | Date;
   user?: ChatUser;
+  pending?: boolean;
+  failed?: boolean;
 };
 
 type HistoryPayload = {
@@ -70,10 +76,13 @@ export function LessonChat({
   const [onlineCount, setOnlineCount] = useState(1);
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [connectionState, setConnectionState] = useState<ChatConnectionState>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [failedText, setFailedText] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingStartSentRef = useRef(false);
+  const connectRef = useRef<(() => Promise<void>) | null>(null);
 
   const typingLabel = useMemo(() => {
     const names = Object.values(typingUsers);
@@ -88,6 +97,7 @@ export function LessonChat({
 
     async function connect() {
       setStatus("loading");
+      setConnectionState("connecting");
       setError(null);
 
       try {
@@ -107,20 +117,43 @@ export function LessonChat({
       } catch (connectError) {
         if (cancelled) return;
         setStatus("error");
+        setConnectionState(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "disconnected");
         setError(connectError instanceof Error ? connectError.message : "Chat холбогдсонгүй");
       }
     }
+
+    connectRef.current = connect;
 
     function handleHistory(payload: HistoryPayload) {
       if (payload.lessonId !== lessonId) return;
       setMessages(payload.messages);
       setOnlineCount(payload.onlineCount);
       setStatus("ready");
+      setConnectionState("connected");
     }
 
     function handleNewMessage(message: LessonChatMessage) {
       if (message.lessonId !== lessonId) return;
-      setMessages((prev) => (prev.some((item) => item.id === message.id) ? prev : [...prev, message]));
+      setMessages((prev) => {
+        const withoutPending = prev.filter(
+          (item) =>
+            !(item.pending && item.userId === message.userId && item.text === message.text),
+        );
+        if (withoutPending.some((item) => item.id === message.id)) return withoutPending;
+        return [...withoutPending, message];
+      });
+    }
+
+    function handleConnect() {
+      setConnectionState("connected");
+    }
+
+    function handleDisconnect() {
+      setConnectionState(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "disconnected");
+    }
+
+    function handleReconnectAttempt() {
+      setConnectionState("reconnecting");
     }
 
     function handlePresence(payload: PresencePayload) {
@@ -146,10 +179,15 @@ export function LessonChat({
     }
 
     function handleMessageError(payload: { message?: string }) {
-      setError(payload.message ?? "Chat action failed");
-      setStatus((prev) => (prev === "loading" ? "error" : prev));
+      setError(payload.message ?? "Мессеж илгээгдсэнгүй");
+      setMessages((prev) =>
+        prev.map((item) => (item.pending ? { ...item, pending: false, failed: true } : item)),
+      );
     }
 
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.io?.on("reconnect_attempt", handleReconnectAttempt);
     socket.on("message:history", handleHistory);
     socket.on("message:new", handleNewMessage);
     socket.on("user:online", handlePresence);
@@ -173,16 +211,29 @@ export function LessonChat({
         }
       }
       setStatus("error");
+      setConnectionState("disconnected");
       setError(connectError.message);
     };
 
     socket.on("connect_error", handleConnectError);
 
+    const handleOnline = () => {
+      if (!socket.connected) void connect();
+    };
+    const handleOffline = () => setConnectionState("offline");
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
     connect();
 
     return () => {
       cancelled = true;
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
       socket.emit("lesson:leave", { lessonId });
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.io?.off("reconnect_attempt", handleReconnectAttempt);
       socket.off("message:history", handleHistory);
       socket.off("message:new", handleNewMessage);
       socket.off("user:online", handlePresence);
@@ -215,20 +266,52 @@ export function LessonChat({
     }, 900);
   }
 
-  function sendMessage(event?: FormEvent) {
+  function sendMessage(event?: FormEvent, retryText?: string) {
     event?.preventDefault();
-    const trimmed = text.trim();
+    const trimmed = (retryText ?? text).trim();
 
-    if (!trimmed || status !== "ready") return;
+    if (!trimmed) return;
+    if (status !== "ready" && !retryText) return;
 
     const socket = getLessonSocket();
-    socket.emit("message:send", {
-      lessonId,
-      courseId,
-      text: trimmed,
-    });
+    const tempId = `opt-${crypto.randomUUID()}`;
+
+    setMessages((prev) => [
+      ...prev.filter((m) => !m.failed),
+      {
+        id: tempId,
+        lessonId,
+        userId: currentUserId,
+        text: trimmed,
+        createdAt: new Date().toISOString(),
+        pending: true,
+      },
+    ]);
+    setFailedText(null);
+    setError(null);
+
+    if (!socket.connected) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, pending: false, failed: true } : m)),
+      );
+      setFailedText(trimmed);
+      setError("Мессеж илгээгдсэнгүй. Дахин оролдоно уу.");
+      return;
+    }
+
+    socket.emit("message:send", { lessonId, courseId, text: trimmed });
     socket.emit("typing:stop", { lessonId });
-    setText("");
+    if (!retryText) setText("");
+
+    window.setTimeout(() => {
+      setMessages((prev) => {
+        const stillPending = prev.find((m) => m.id === tempId && m.pending);
+        if (!stillPending) return prev;
+        return prev.map((m) =>
+          m.id === tempId ? { ...m, pending: false, failed: true } : m,
+        );
+      });
+    }, 8000);
   }
 
   return (
@@ -255,6 +338,11 @@ export function LessonChat({
           </div>
         </div>
       </div>
+
+      <ChatConnectionStatus
+        state={connectionState}
+        onRetry={() => void connectRef.current?.()}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         {status === "loading" ? (
@@ -294,9 +382,26 @@ export function LessonChat({
                       className={cn(
                         "rounded-xl px-3 py-2 text-left text-sm leading-relaxed shadow-sm",
                         mine ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-100",
+                        message.pending && "opacity-70",
+                        message.failed && "ring-1 ring-red-400/60",
                       )}
                     >
                       {message.text}
+                      {message.pending && (
+                        <span className="mt-1 block text-[10px] opacity-80">Илгээж байна…</span>
+                      )}
+                      {message.failed && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessages((prev) => prev.filter((m) => m.id !== message.id));
+                            sendMessage(undefined, message.text);
+                          }}
+                          className="mt-1 text-[10px] font-bold underline"
+                        >
+                          Дахин илгээх
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -310,6 +415,15 @@ export function LessonChat({
       <div className="border-t border-white/10 p-3">
         <div className="h-5 text-xs text-violet-200">{typingLabel}</div>
         {error ? <div className="mb-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-100">{error}</div> : null}
+        {failedText ? (
+          <button
+            type="button"
+            onClick={() => sendMessage(undefined, failedText)}
+            className="mb-2 w-full rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100"
+          >
+            Мессеж илгээгдсэнгүй — Дахин оролдох
+          </button>
+        ) : null}
         <form onSubmit={sendMessage} className="flex items-end gap-2">
           <div className="flex min-h-10 flex-1 items-center gap-2 rounded-xl bg-slate-800 px-3 ring-1 ring-white/10 focus-within:ring-violet-400">
             <Smile size={16} className="shrink-0 text-slate-400" />

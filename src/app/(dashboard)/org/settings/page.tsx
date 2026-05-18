@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Байгууллагын тохир�
 
 export default async function OrgSettingsPage() {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/login");
   }
 

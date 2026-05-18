@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Байгууллагын самба�
 
 export default async function OrgDashboardPage() {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/login");
   }
 

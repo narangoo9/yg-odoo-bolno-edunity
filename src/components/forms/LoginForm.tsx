@@ -7,6 +7,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
 import { loginSchema, type LoginInput } from "@/modules/auth/domain/schemas";
+import { resolveLoginErrorMessage } from "@/lib/auth/login-errors";
 import { cn } from "@/lib/utils";
 
 const AUTH_BTN =
@@ -22,36 +23,15 @@ const INPUT_BASE =
   "dark:bg-violet-900/20 dark:text-white dark:placeholder:text-gray-500 " +
   "dark:focus:bg-violet-900/30 dark:focus:border-violet-500";
 
-const OAUTH_ERROR_MESSAGES: Record<string, string> = {
-  OAuthSignin: "Google руу шилжих үед алдаа гарлаа. Дахин оролдоно уу.",
-  OAuthCallback:
-    "Google-аас буцаж ирэх үед алдаа гарлаа. Google Cloud Console дээр Authorized redirect URI-д `http://localhost:3000/api/auth/callback/google` нэмэгдсэн эсэхийг шалгана уу.",
-  OAuthCreateAccount:
-    "Google хэрэглэгч үүсгэх боломжгүй байна. Өгөгдлийн сангийн холболтыг шалгана уу.",
-  EmailCreateAccount: "Хэрэглэгч үүсгэхэд алдаа гарлаа.",
-  Callback: "Нэвтрэх callback дээр алдаа гарлаа. Server log-оо шалгана уу.",
-  OAuthAccountNotLinked:
-    "Энэ имэйл өөр аргаар бүртгэгдсэн байна. Имэйл/нууц үгээр нэвтэрнэ үү.",
-  EmailSignin: "Имэйл линк илгээх үед алдаа гарлаа.",
-  CredentialsSignin: "Имэйл эсвэл нууц үг буруу байна.",
-  SessionRequired: "Та эхлээд нэвтэрсэн байх шаардлагатай.",
-  AccessDenied: "Нэвтрэх эрх хязгаарлагдсан байна.",
-  Verification: "Имэйл баталгаажуулалт амжилтгүй боллоо.",
-  Configuration:
-    "Auth тохиргоо буруу байна. AUTH_SECRET, GOOGLE_CLIENT_ID/SECRET, NEXTAUTH_URL-г .env файлд шалгана уу.",
-  Default: "Нэвтрэх үед алдаа гарлаа. Дахин оролдоно уу.",
-};
-
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl");
   const urlError = searchParams.get("error");
+  const urlCode = searchParams.get("code");
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | null>(
-    urlError
-      ? `${OAUTH_ERROR_MESSAGES[urlError] ?? OAUTH_ERROR_MESSAGES.Default} (код: ${urlError})`
-      : null,
+    urlError ? resolveLoginErrorMessage(urlError, urlCode) : null,
   );
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
@@ -71,6 +51,14 @@ export function LoginForm() {
     };
   }, []);
 
+  const clearAuthErrorFromUrl = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("error");
+    params.delete("code");
+    const query = params.toString();
+    router.replace(query ? `/login?${query}` : "/login", { scroll: false });
+  };
+
   const {
     register,
     handleSubmit,
@@ -79,6 +67,8 @@ export function LoginForm() {
 
   const onSubmit = async (data: LoginInput) => {
     setServerError(null);
+    clearAuthErrorFromUrl();
+
     const destination = callbackUrl ?? "/dashboard";
     const res = await signIn("credentials", {
       email: data.email,
@@ -88,20 +78,7 @@ export function LoginForm() {
     });
 
     if (res?.error) {
-      const code = res.error;
-      if (code === "CredentialsSignin") {
-        setServerError("Имэйл эсвэл нууц үг буруу байна");
-      } else if (code === "Configuration") {
-        setServerError(
-          "Өгөгдлийн сангийн холболт эсвэл AUTH_SECRET / Google OAuth тохиргоог шалгана уу."
-        );
-      } else if (code === "AccessDenied") {
-        setServerError("Нэвтрэх эрх хязгаарлагдсан байна.");
-      } else if (process.env.NODE_ENV === "development") {
-        setServerError(`Нэвтрэх алдаа (${code}). Дахин оролдоно уу.`);
-      } else {
-        setServerError("Нэвтрэх үед алдаа гарлаа. Дахин оролдоно уу.");
-      }
+      setServerError(resolveLoginErrorMessage(res.error, res.code ?? null));
       return;
     }
 
@@ -141,7 +118,7 @@ export function LoginForm() {
             className={cn(
               INPUT_BASE,
               "pl-10 pr-4 py-3.5",
-              errors.email ? "border-red-300 dark:border-red-700" : "border-purple-100 dark:border-violet-800/40"
+              errors.email ? "border-red-300 dark:border-red-700" : "border-purple-100 dark:border-violet-800/40",
             )}
           />
         </div>
@@ -169,7 +146,7 @@ export function LoginForm() {
             className={cn(
               INPUT_BASE,
               "pl-10 pr-10 py-3.5",
-              errors.password ? "border-red-300 dark:border-red-700" : "border-purple-100 dark:border-violet-800/40"
+              errors.password ? "border-red-300 dark:border-red-700" : "border-purple-100 dark:border-violet-800/40",
             )}
           />
           <button
@@ -215,6 +192,7 @@ export function LoginForm() {
             disabled={googleSubmitting}
             onClick={async () => {
               setServerError(null);
+              clearAuthErrorFromUrl();
               setGoogleSubmitting(true);
               try {
                 const res = await signIn("google", {
@@ -223,7 +201,7 @@ export function LoginForm() {
                 });
                 if (res?.error) {
                   setServerError(
-                    `${OAUTH_ERROR_MESSAGES[res.error] ?? OAUTH_ERROR_MESSAGES.Default} (код: ${res.error})`,
+                    resolveLoginErrorMessage(res.error, res.code ?? null),
                   );
                   setGoogleSubmitting(false);
                   return;

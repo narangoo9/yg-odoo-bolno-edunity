@@ -230,7 +230,7 @@ export default function CompletePage() {
             {/* CTA */}
             <motion.button
               type="button"
-              onClick={() => router.push("/student")}
+              onClick={() => router.push("/register")}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.9 }}
@@ -239,7 +239,7 @@ export default function CompletePage() {
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-purple-600 py-3.5 text-[15px] font-black text-white shadow-[0_4px_20px_rgba(124,58,237,0.35)] transition-all hover:from-violet-500 hover:to-purple-500"
             >
               <Award size={18} />
-              Dashboard руу орох
+              Бүртгэлээ дуусгах
             </motion.button>
           </motion.div>
         </div>

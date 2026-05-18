@@ -17,7 +17,7 @@ const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secon
 
 export default async function OrgProgramsPage() {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/login");
   }
 

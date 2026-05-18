@@ -13,7 +13,7 @@ export default async function OrganizationNotificationsPage() {
     redirect("/login");
   }
 
-  if (session.user.role !== "ORG_ADMIN") {
+  if (session.user.role !== "COMPANY") {
     redirect(dashboardHomeByRole[session.user.role]);
   }
 

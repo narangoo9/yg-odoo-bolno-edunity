@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { EduNityLogo } from "@/components/layout/EduNityLogo";
 import { LoginForm } from "@/components/forms/LoginForm";
 import { RegisterForm } from "@/components/forms/RegisterForm";
+import { CompleteGoogleRegistrationForm } from "@/components/forms/CompleteGoogleRegistrationForm";
 
 type AuthMode = "login" | "register";
 
@@ -227,16 +228,46 @@ export function AuthPageClient({
   initialMode,
   registered,
   referralCode,
+  googleComplete,
 }: {
   initialMode: AuthMode;
   registered?: string;
   referralCode?: string;
+  /** Google-ээр нэвтэрсэн, нууц үг тохируулах алхам */
+  googleComplete?: { email: string; defaultName: string };
 }) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const isRegister = mode === "register";
 
   const switchToLogin = useCallback(() => setMode("login"), []);
   const switchToRegister = useCallback(() => setMode("register"), []);
+
+  if (googleComplete) {
+    return (
+      <motion.div className="no-scrollbar relative flex min-h-screen items-center justify-center overflow-y-auto bg-[#F8F7FF] px-4 py-10 dark:bg-[#0f0e1a]">
+        <ThemeToggle className="absolute right-4 top-4 z-20" />
+        <div className="w-full max-w-md animate-fade-up">
+          <Link href="/" className="mb-6 inline-flex">
+            <EduNityLogo iconClassName="h-7" textClassName="text-lg" />
+          </Link>
+          <AuthCard>
+            <motion.div className="mb-5">
+              <h1 className="text-[25px] font-black text-gray-900 dark:text-white">
+                Бүртгэлээ дуусгах
+              </h1>
+              <p className="mt-1 text-[13px] text-gray-500 dark:text-gray-400">
+                Google-ээр баталгаажсан имэйлээ шалгаад, нэр болон нууц үгээ тохируулна уу.
+              </p>
+            </motion.div>
+            <CompleteGoogleRegistrationForm
+              email={googleComplete.email}
+              defaultName={googleComplete.defaultName}
+            />
+          </AuthCard>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <>

@@ -70,7 +70,7 @@ export async function GET(_request: Request, { params }: Props) {
   const canManage =
     session.user.role === "SUPER_ADMIN" ||
     course.instructorId === session.user.id ||
-    (session.user.role === "ORG_ADMIN" && sameOrganization);
+    (session.user.role === "COMPANY" && sameOrganization);
 
   if (!canManage) {
     const enrollment = await db.enrollment.findUnique({

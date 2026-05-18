@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const session = await auth();
     if (!session?.user) return unauthorized();
 
-    const allowedRoles = ["INSTRUCTOR", "ORG_ADMIN", "SUPER_ADMIN"];
+    const allowedRoles = ["COMPANY", "COMPANY", "SUPER_ADMIN"];
     if (!allowedRoles.includes(session.user.role)) return forbidden();
 
     const body = await req.json();

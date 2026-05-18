@@ -113,14 +113,14 @@ async function main() {
       where: { email: company.email },
       update: {
         name: company.name,
-        role: "ORG_ADMIN",
+        role: "COMPANY",
         status: "ACTIVE",
         avatarUrl: company.logoUrl,
       },
       create: {
         name: company.name,
         email: company.email,
-        role: "ORG_ADMIN",
+        role: "COMPANY",
         status: "ACTIVE",
         avatarUrl: company.logoUrl,
       },

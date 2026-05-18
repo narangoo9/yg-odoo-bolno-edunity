@@ -9,6 +9,7 @@ import { markLessonComplete, markLessonSectionComplete } from "@/modules/courses
 import { toast } from "@/components/ui/toaster";
 import { CourseOutlinePanel } from "@/components/course/CourseOutlinePanel";
 import { LessonProgressHeader } from "@/components/course/LessonProgressHeader";
+import { CourseProgressPanel } from "@/components/course/CourseProgressPanel";
 import { LessonPlayer } from "@/components/course/LessonPlayer";
 import { LessonTabs } from "@/components/course/LessonTabs";
 import { YouTubeSectionPlayer } from "@/components/lesson/YouTubeSectionPlayer";
@@ -107,6 +108,17 @@ export function LearningPlayer({ course, activeLesson, completedIds, studentId }
       ? Math.round((completedCount / allLessons.length) * 100)
       : 0;
 
+  const remainingLessons = allLessons.filter((l) => !localCompleted.has(l.id));
+  const estimatedMinutesRemaining = remainingLessons.reduce(
+    (sum, l) => sum + (l.duration ? Math.ceil(l.duration / 60) : 8),
+    0,
+  );
+  const certificateReadiness = Math.min(
+    100,
+    Math.round(liveProgress * 0.5 + (isCompleted ? 10 : 0) + (completedCount === allLessons.length ? 40 : 0)),
+  );
+  const allLessonsComplete = allLessons.length > 0 && completedCount >= allLessons.length;
+
   const handleMarkComplete = () => {
     setLocalCompleted((prev) => new Set([...prev, activeLesson.id]));
     startTransition(async () => {
@@ -183,6 +195,23 @@ export function LearningPlayer({ course, activeLesson, completedIds, studentId }
           onMarkComplete={handleMarkComplete}
           showChat={showChat}
           onToggleChat={() => setShowChat((v) => !v)}
+        />
+
+        <CourseProgressPanel
+          courseId={course.id}
+          courseTitle={course.title}
+          completedCount={completedCount}
+          totalLessons={allLessons.length}
+          watchPercent={liveProgress}
+          nextLesson={nextLesson}
+          estimatedMinutesRemaining={estimatedMinutesRemaining}
+          certificateReadiness={certificateReadiness}
+          allLessonsComplete={allLessonsComplete}
+          finalTaskRemaining={!allLessonsComplete && currentIndex >= allLessons.length - 2}
+          lessonsWatched={allLessonsComplete}
+          tasksComplete={completedCount >= Math.max(1, Math.floor(allLessons.length * 0.6))}
+          projectSubmitted={allLessonsComplete}
+          certificateUnlocked={allLessonsComplete}
         />
 
         <div className="flex-1 overflow-y-auto">

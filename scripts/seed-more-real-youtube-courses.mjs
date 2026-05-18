@@ -133,7 +133,7 @@ async function upsertYouTubeInstructor(meta) {
       name: meta.author,
       avatarUrl: meta.avatarUrl || null,
       bio: `Official YouTube channel: ${meta.author}`,
-      role: "INSTRUCTOR",
+      role: "COMPANY",
       status: "ACTIVE",
     },
     create: {
@@ -141,7 +141,7 @@ async function upsertYouTubeInstructor(meta) {
       email,
       avatarUrl: meta.avatarUrl || null,
       bio: `Official YouTube channel: ${meta.author}`,
-      role: "INSTRUCTOR",
+      role: "COMPANY",
       status: "ACTIVE",
       emailVerified: new Date(),
     },

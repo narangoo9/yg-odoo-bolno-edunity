@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getDashboardHomeByRole } from "@/lib/dashboard-routes";
+import { getPostAuthRedirectPath } from "@/lib/auth/post-auth-redirect";
 
 export default async function DashboardRedirectPage() {
   const session = await auth();
@@ -12,14 +12,10 @@ export default async function DashboardRedirectPage() {
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
-    select: { role: true, status: true, onboardingCompleted: true },
+    select: { role: true, status: true, onboardingCompleted: true, passwordHash: true },
   });
 
   if (!user) redirect("/login");
-  if (user.status === "PENDING_VERIFICATION") redirect("/verify-email");
-  if (user.role === "STUDENT" && !user.onboardingCompleted) {
-    redirect("/onboarding/welcome");
-  }
 
-  redirect(getDashboardHomeByRole(user.role));
+  redirect(getPostAuthRedirectPath(user));
 }

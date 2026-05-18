@@ -24,7 +24,7 @@ describe("auth schemas", () => {
   });
 
   describe("registerSchema", () => {
-    // Public signup is STUDENT only — role field removed from schema
+    // Public signup is USER only — role field removed from schema
     const validInput = {
       name: "Test User",
       email: "test@example.com",
@@ -67,8 +67,8 @@ describe("auth schemas", () => {
       }).success).toBe(false);
     });
 
-    it("registers without a role field (always STUDENT)", () => {
-      // role field was removed — public signup is STUDENT only
+    it("registers without a role field (always USER)", () => {
+      // role field was removed — public signup is USER only
       const result = registerSchema.parse(validInput);
       expect(result.name).toBe("Test User");
     });
@@ -92,3 +92,4 @@ describe("auth schemas", () => {
     });
   });
 });
+

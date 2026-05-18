@@ -13,7 +13,7 @@ export default async function InstructorNotificationsPage() {
     redirect("/login");
   }
 
-  if (session.user.role !== "INSTRUCTOR") {
+  if (session.user.role !== "COMPANY") {
     redirect(dashboardHomeByRole[session.user.role]);
   }
 

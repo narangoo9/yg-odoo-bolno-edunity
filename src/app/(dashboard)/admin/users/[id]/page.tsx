@@ -17,9 +17,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 const roleLabels: Record<string, string> = {
-  STUDENT: "User",
-  INSTRUCTOR: "Company",
-  ORG_ADMIN: "Company",
+  USER: "User",
+  COMPANY: "Company",
   SUPER_ADMIN: "Super admin",
 };
 

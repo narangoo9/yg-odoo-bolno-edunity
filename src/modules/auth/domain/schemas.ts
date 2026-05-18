@@ -9,7 +9,7 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Нууц үг оруулна уу"),
 });
 
-// Public signup: learners only. Instructors come from org invites.
+// Public signup creates USER accounts. Company users come from organization flows.
 export const registerSchema = z
   .object({
     name: z.string().min(2, "Нэр 2-оос дээш тэмдэгттэй байх ёстой"),
@@ -27,7 +27,25 @@ export const registerSchema = z
     path: ["confirmPassword"],
   });
 
-// Organization onboarding: creates org + first ORG_ADMIN in one flow
+/** Google OAuth-оор бүртгүүлсний дараа нэр, нууц үг тохируулах */
+export const googleCompleteSchema = z
+  .object({
+    name: z.string().min(2, "Нэр 2-оос дээш тэмдэгттэй байх ёстой"),
+    password: z
+      .string()
+      .min(8, "Нууц үг 8-аас дээш тэмдэгттэй байх ёстой")
+      .regex(/[A-Z]/, "Нууц үгт том үсэг агуулагдсан байх ёстой")
+      .regex(/[0-9]/, "Нууц үгт тоо агуулагдсан байх ёстой"),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Нууц үг таарахгүй байна",
+    path: ["confirmPassword"],
+  });
+
+export type GoogleCompleteInput = z.infer<typeof googleCompleteSchema>;
+
+// Organization onboarding: creates org + first COMPANY account in one flow.
 export const orgOnboardSchema = z
   .object({
     // Admin user

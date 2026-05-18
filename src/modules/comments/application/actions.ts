@@ -94,7 +94,7 @@ export async function deleteComment(commentId: string) {
   const canDelete =
     comment.authorId === session.user.id ||
     session.user.role === "SUPER_ADMIN" ||
-    session.user.role === "ORG_ADMIN";
+    session.user.role === "COMPANY";
 
   if (!canDelete) return { error: "Зөвшөөрөл хангалтгүй" };
 

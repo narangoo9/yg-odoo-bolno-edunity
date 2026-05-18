@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { getPostAuthRedirectPath } from "@/lib/auth/post-auth-redirect";
 import { db } from "@/lib/db";
 import { EduNityLogo } from "@/components/layout/EduNityLogo";
 import { OnboardingStepper } from "@/components/onboarding/OnboardingStepper";
@@ -12,14 +13,18 @@ export default async function OnboardingLayout({ children }: { children: React.R
   const user = await db.user
     .findUnique({
       where: { id: session.user.id },
-      select: { role: true, status: true, onboardingCompleted: true },
+      select: { role: true, status: true, onboardingCompleted: true, passwordHash: true },
     })
     .catch(() => null);
 
   if (!user) redirect("/login");
   if (user.status !== "ACTIVE") redirect("/verify-email");
-  if (user.role !== "STUDENT") redirect("/dashboard");
-  if (user.onboardingCompleted) redirect("/student");
+  if (user.role !== "USER") redirect("/dashboard");
+
+  const afterOnboarding = getPostAuthRedirectPath(user);
+  if (user.onboardingCompleted && afterOnboarding !== "/onboarding/welcome") {
+    redirect(afterOnboarding);
+  }
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#ede9fe] via-[#f5f2ff] to-[#faf8ff]">

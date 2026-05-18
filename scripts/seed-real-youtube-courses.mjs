@@ -327,7 +327,7 @@ async function upsertInstructor(data) {
       name: data.name,
       avatarUrl: data.avatarUrl,
       bio: data.bio,
-      role: "INSTRUCTOR",
+      role: "COMPANY",
       status: "ACTIVE",
     },
     create: {
@@ -335,7 +335,7 @@ async function upsertInstructor(data) {
       email: data.email,
       avatarUrl: data.avatarUrl,
       bio: data.bio,
-      role: "INSTRUCTOR",
+      role: "COMPANY",
       status: "ACTIVE",
       emailVerified: new Date(),
     },

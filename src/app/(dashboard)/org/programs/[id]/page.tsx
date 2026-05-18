@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Программ удирдах" };
 export default async function ProgramDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/login");
   }
 

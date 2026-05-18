@@ -16,9 +16,8 @@ datasource db {
 // ─── ENUMS ───────────────────────────────────────────────────────────────────
 
 enum UserRole {
-  STUDENT
-  INSTRUCTOR
-  ORG_ADMIN
+  USER
+  COMPANY
   SUPER_ADMIN
 }
 
@@ -239,7 +238,7 @@ model User {
   passwordHash     String?
   avatarUrl        String?
   bio              String?
-  role             UserRole   @default(STUDENT)
+  role             UserRole   @default(USER)
   status           UserStatus @default(PENDING_VERIFICATION)
   organizationId   String?
   stripeCustomerId String?    @unique
@@ -411,7 +410,7 @@ model OrgInvite {
   id             String    @id @default(cuid())
   organizationId String
   email          String
-  role           UserRole  @default(STUDENT)
+  role           UserRole  @default(USER)
   token          String    @unique
   invitedBy      String
   expiresAt      DateTime

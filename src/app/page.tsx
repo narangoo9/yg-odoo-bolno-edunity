@@ -11,6 +11,7 @@ import {
 import { getCourses } from "@/modules/courses/infrastructure/queries";
 import { getAdminOverview } from "@/modules/analytics/infrastructure/queries";
 import { Navbar } from "@/components/layout/Navbar";
+import { HomeTrustSections } from "@/components/landing/HomeTrustSections";
 import { ScrollReveal } from "@/components/ui/scroll-reveal";
 import { MascotImage, type MascotVariant } from "@/components/brand/MascotImage";
 import { auth } from "@/lib/auth";
@@ -113,8 +114,8 @@ export default async function HomePage() {
                 className="text-[#6B7280] dark:text-[#A1A1AA] text-base sm:text-lg max-w-xl mb-10 leading-relaxed animate-fade-up"
                 style={{ animationDelay: "0.1s" }}
               >
-                Чанартай контент, шилдэг багш нарын сургалтаар өөрийгөө
-                хөгжүүлж, ирээдүйгээ өөрчлөх боломжийг нээ.
+                Бодит компаниас суралцаж, төсөл хийж, peer review хүлээн авч,
+                сертификат аваарай.
               </p>
 
               {/* CTAs */}
@@ -696,6 +697,8 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <HomeTrustSections />
+
       {/* ── FINAL CTA ───────────────────────────────────────────────────────── */}
       <section className="py-28 px-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#2d0c6e] via-[#4a1295] to-[#2d0c6e] dark:from-[#1a0830] dark:via-[#240d42] dark:to-[#1a0830]" />
@@ -786,7 +789,7 @@ export default async function HomePage() {
             <div>
               <p className="text-[#111827] dark:text-[#F8FAFC] text-xs font-bold uppercase tracking-widest mb-4">Компани</p>
               <ul className="space-y-2.5">
-                {[["Бидний тухай", "/#about"], ["Онцлог", "/#features"], ["Яаж ажилладаг вэ?", "/#how-it-works"], ["Үнэ тариф", "/pricing"]].map(([label, href]) => (
+                {[["Бидний тухай", "/about"], ["FAQ", "/faq"], ["Яаж ажилладаг вэ?", "/#how-it-works"], ["Үнэ тариф", "/pricing"]].map(([label, href]) => (
                   <li key={label}>
                     <Link href={href} className="text-xs text-[#6B7280] dark:text-[#A1A1AA] hover:text-violet-600 dark:hover:text-violet-400 transition-colors">{label}</Link>
                   </li>
@@ -797,7 +800,7 @@ export default async function HomePage() {
             <div>
               <p className="text-[#111827] dark:text-[#F8FAFC] text-xs font-bold uppercase tracking-widest mb-4">Дэмжлэг</p>
               <ul className="space-y-2.5">
-                {[["Байгууллага бүртгүүлэх", "/register"], ["Багшаар бүртгүүлэх", "/register"], ["Бүртгүүлэх", "/register"], ["Нэвтрэх", "/login"]].map(([label, href]) => (
+                {[["Дэмжлэг", "/support"], ["Нууцлал", "/privacy"], ["Үйлчилгээний нөхцөл", "/terms"], ["Нэвтрэх", "/login"]].map(([label, href]) => (
                   <li key={label}>
                     <Link href={href} className="text-xs text-[#6B7280] dark:text-[#A1A1AA] hover:text-violet-600 dark:hover:text-violet-400 transition-colors">{label}</Link>
                   </li>

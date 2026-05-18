@@ -42,7 +42,7 @@ import {
 export async function createCourse(input: CreateCourseInput) {
   const session = await auth();
   if (!session?.user) throw new Error("Нэвтрэх шаардлагатай");
-  if (!["INSTRUCTOR", "ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!["COMPANY", "COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     throw new Error("Эрхгүй");
   }
 
@@ -75,7 +75,7 @@ export async function updateCourse(id: string, input: UpdateCourseInput) {
   const canEdit =
     course.instructorId === session.user.id ||
     session.user.role === "SUPER_ADMIN" ||
-    (session.user.role === "ORG_ADMIN" && course.organizationId === session.user.organizationId);
+    (session.user.role === "COMPANY" && course.organizationId === session.user.organizationId);
 
   if (!canEdit) return { error: "Эрхгүй" };
 
@@ -105,7 +105,7 @@ export async function deleteCourse(id: string) {
   const canDelete =
     course.instructorId === session.user.id ||
     session.user.role === "SUPER_ADMIN" ||
-    (session.user.role === "ORG_ADMIN" &&
+    (session.user.role === "COMPANY" &&
       course.organizationId &&
       course.organizationId === session.user.organizationId);
 
@@ -210,7 +210,7 @@ export async function previewYouTubeCourseImport(input: {
 export async function createCourseFromYouTube(input: CreateYouTubeCourseInput) {
   const session = await auth();
   if (!session?.user) throw new Error("Нэвтрэх шаардлагатай");
-  if (!["INSTRUCTOR", "ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!["COMPANY", "COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     throw new Error("Эрхгүй");
   }
 
@@ -283,7 +283,7 @@ export async function createModule(input: CreateModuleInput) {
     course &&
     (course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
-      (session.user.role === "ORG_ADMIN" && course.organizationId === session.user.organizationId));
+      (session.user.role === "COMPANY" && course.organizationId === session.user.organizationId));
   if (!canEdit) return { error: "Эрхгүй" };
 
   const lastModule = await db.courseModule.findFirst({
@@ -315,7 +315,7 @@ export async function deleteModule(id: string) {
     courseModule &&
     (courseModule.course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
-      (session.user.role === "ORG_ADMIN" &&
+      (session.user.role === "COMPANY" &&
         courseModule.course.organizationId === session.user.organizationId));
   if (!canEdit) return { error: "Эрхгүй" };
 
@@ -343,7 +343,7 @@ export async function createLesson(input: CreateLessonInput) {
     courseModule &&
     (courseModule.course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
-      (session.user.role === "ORG_ADMIN" &&
+      (session.user.role === "COMPANY" &&
         courseModule.course.organizationId === session.user.organizationId));
   if (!canEditLesson) return { error: "Эрхгүй" };
 
@@ -381,7 +381,7 @@ export async function updateLesson(lessonId: string, input: UpdateLessonInput) {
     lesson &&
     (lesson.module.course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
-      (session.user.role === "ORG_ADMIN" &&
+      (session.user.role === "COMPANY" &&
         lesson.module.course.organizationId === session.user.organizationId));
   if (!canEdit) return { error: "Эрхгүй" };
 
@@ -421,7 +421,7 @@ export async function fixZeroTimeSegments(courseId: string) {
     course &&
     (course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
-      (session.user.role === "ORG_ADMIN" &&
+      (session.user.role === "COMPANY" &&
         course.organizationId === session.user.organizationId));
   if (!canFix) return { error: "Эрхгүй" };
 
@@ -453,7 +453,7 @@ export async function deleteLesson(lessonId: string) {
     lesson &&
     (lesson.module.course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
-      (session.user.role === "ORG_ADMIN" &&
+      (session.user.role === "COMPANY" &&
         lesson.module.course.organizationId === session.user.organizationId));
   if (!canEdit) return { error: "Эрхгүй" };
 
@@ -484,7 +484,7 @@ export async function reorderLessons(input: { lessons: { id: string; orderIndex:
     return (
       session.user.role === "SUPER_ADMIN" ||
       course.instructorId === session.user.id ||
-      (session.user.role === "ORG_ADMIN" && course.organizationId === session.user.organizationId)
+      (session.user.role === "COMPANY" && course.organizationId === session.user.organizationId)
     );
   });
 
@@ -515,7 +515,7 @@ export async function createLessonSection(input: LessonSectionInput) {
     lesson &&
     (lesson.module.course.instructorId === session.user.id ||
       session.user.role === "SUPER_ADMIN" ||
-      (session.user.role === "ORG_ADMIN" &&
+      (session.user.role === "COMPANY" &&
         lesson.module.course.organizationId === session.user.organizationId));
   if (!canEdit) return { error: "Эрхгүй" };
 

@@ -138,7 +138,7 @@ async function getMyLeaderboardEntry(userId: string) {
 export default async function LeaderboardPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "STUDENT") redirect("/student");
+  if (session.user.role !== "USER") redirect("/student");
 
   const [globalEntries, weeklyEntries, myEntry, friendships] = await Promise.all([
     getCachedGlobalLeaderboard(),

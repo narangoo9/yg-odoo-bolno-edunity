@@ -40,7 +40,7 @@ export default async function CourseEditorPage({ params }: Props) {
   const canAccess =
     course.instructorId === session.user.id ||
     session.user.role === "SUPER_ADMIN" ||
-    (session.user.role === "ORG_ADMIN" &&
+    (session.user.role === "COMPANY" &&
       course.organizationId === session.user.organizationId);
   if (!canAccess) redirect("/instructor/courses");
 

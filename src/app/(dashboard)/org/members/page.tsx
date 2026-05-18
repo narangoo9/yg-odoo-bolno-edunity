@@ -39,7 +39,7 @@ export default function OrgMembersPage() {
 
   const orgId = session?.user?.organizationId;
   const userRole = (session?.user as { role?: string })?.role;
-  const canManage = userRole === "ORG_ADMIN" || userRole === "SUPER_ADMIN";
+  const canManage = userRole === "COMPANY" || userRole === "SUPER_ADMIN";
 
   async function fetchMembers() {
     if (!orgId) return;

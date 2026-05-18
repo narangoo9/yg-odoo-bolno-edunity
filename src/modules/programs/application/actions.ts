@@ -11,7 +11,7 @@ import type { ProgramInput, AddProgramCourseInput, EnrollProgramInput } from "..
 
 export async function createProgram(input: ProgramInput) {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     return { error: "Зөвшөөрөл хүрэлцэхгүй байна" };
   }
 
@@ -44,7 +44,7 @@ export async function createProgram(input: ProgramInput) {
 
 export async function updateProgram(programId: string, input: Partial<ProgramInput>) {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     return { error: "Зөвшөөрөл хүрэлцэхгүй байна" };
   }
 
@@ -70,7 +70,7 @@ export async function updateProgram(programId: string, input: Partial<ProgramInp
 
 export async function publishProgram(programId: string) {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     return { error: "Зөвшөөрөл хүрэлцэхгүй байна" };
   }
 
@@ -95,7 +95,7 @@ export async function publishProgram(programId: string) {
 
 export async function addCourseToProgram(input: AddProgramCourseInput) {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     return { error: "Зөвшөөрөл хүрэлцэхгүй байна" };
   }
 
@@ -133,7 +133,7 @@ export async function addCourseToProgram(input: AddProgramCourseInput) {
 
 export async function removeCourseFromProgram(programId: string, courseId: string) {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     return { error: "Зөвшөөрөл хүрэлцэхгүй байна" };
   }
 
@@ -217,7 +217,7 @@ export async function issueProgramCertificate(programEnrollmentId: string) {
   });
 
   if (!enrollment) return { error: "Бүртгэл олдсонгүй" };
-  if (enrollment.studentId !== session.user.id && !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (enrollment.studentId !== session.user.id && !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     return { error: "Зөвшөөрөл хүрэлцэхгүй байна" };
   }
 

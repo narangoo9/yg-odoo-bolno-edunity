@@ -41,6 +41,8 @@ export default async function SettingsPage() {
 
   const xpInLevel   = user.xp % 150;
   const xpPct       = Math.min(100, Math.round((xpInLevel / 150) * 100));
+  const role = user.role as string;
+  const roleLabel = role === "SUPER_ADMIN" ? "Super admin" : role === "COMPANY" ? "Company" : "User";
 
   return (
     <div className="max-w-3xl space-y-5 animate-fade-up pb-10">
@@ -164,7 +166,7 @@ export default async function SettingsPage() {
           />
           <InfoRow
             label="Хэрэглэгчийн төрөл"
-            value={user.role === "SUPER_ADMIN" ? "Super admin" : user.role === "ORG_ADMIN" || user.role === "INSTRUCTOR" ? "Company" : "User"}
+            value={roleLabel}
           />
         </div>
       </section>

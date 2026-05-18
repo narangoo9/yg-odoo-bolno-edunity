@@ -60,7 +60,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const isStudent = session.user.role === "STUDENT";
+  const isStudent = session.user.role === "USER";
   const [dbUser, unreads, savedCoursesCount] = await Promise.all([
     getCachedDashboardUser(session.user.id).catch(() => null),
     getCachedUnreads(session.user.id, isStudent).catch(() => ({ notifications: 0, messages: 0 })),

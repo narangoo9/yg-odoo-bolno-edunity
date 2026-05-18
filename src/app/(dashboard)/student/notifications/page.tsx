@@ -13,7 +13,7 @@ export default async function StudentNotificationsPage() {
     redirect("/login");
   }
 
-  if (session.user.role !== "STUDENT") {
+  if (session.user.role !== "USER") {
     redirect(dashboardHomeByRole[session.user.role]);
   }
 

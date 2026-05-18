@@ -101,7 +101,7 @@ export default function WelcomePage() {
 
       <p className="mt-4 text-center text-[11px] text-gray-400">
         Шууд орох уу?{" "}
-        <Link href="/student" className="font-semibold text-violet-600 hover:underline">
+        <Link href="/dashboard" className="font-semibold text-violet-600 hover:underline">
           Алгасах
         </Link>
       </p>

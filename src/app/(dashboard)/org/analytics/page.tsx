@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Байгууллагын анали�
 
 export default async function OrgAnalyticsPage() {
   const session = await auth();
-  if (!session?.user || !["ORG_ADMIN", "SUPER_ADMIN"].includes(session.user.role)) {
+  if (!session?.user || !["COMPANY", "SUPER_ADMIN"].includes(session.user.role)) {
     redirect("/login");
   }
 

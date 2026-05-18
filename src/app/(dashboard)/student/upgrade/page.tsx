@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Upgrade — EduNity" };
 export default async function UpgradePage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "STUDENT") redirect("/student");
+  if (session.user.role !== "USER") redirect("/student");
 
   const subscription = await db.subscription.findUnique({
     where: { userId: session.user.id },

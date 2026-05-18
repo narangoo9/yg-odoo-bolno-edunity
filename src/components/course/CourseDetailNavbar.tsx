@@ -28,8 +28,7 @@ export function CourseDetailNavbar() {
 
   const dashboardHref =
     session?.user.role === "SUPER_ADMIN" ? "/admin"
-    : session?.user.role === "INSTRUCTOR" ? "/instructor"
-    : session?.user.role === "ORG_ADMIN" ? "/org"
+    : session?.user.role === "COMPANY" ? "/org"
     : "/student";
 
   useEffect(() => {

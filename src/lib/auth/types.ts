@@ -17,6 +17,8 @@ declare module "next-auth" {
       role: UserRole;
       status: string;
       organizationId: string | null;
+      onboardingCompleted: boolean;
+      profileComplete: boolean;
     };
   }
 }
@@ -27,5 +29,7 @@ declare module "@auth/core/jwt" {
     role: UserRole;
     status: string;
     organizationId: string | null;
+    onboardingCompleted?: boolean;
+    profileComplete?: boolean;
   }
 }

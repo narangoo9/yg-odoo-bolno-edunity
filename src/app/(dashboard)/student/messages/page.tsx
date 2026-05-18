@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Мессеж" };
 export default async function MessagesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "STUDENT") redirect("/student");
+  if (session.user.role !== "USER") redirect("/student");
 
   const [enrollments, myUser] = await Promise.all([
     db.enrollment.findMany({

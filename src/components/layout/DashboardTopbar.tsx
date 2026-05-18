@@ -85,9 +85,8 @@ export function DashboardTopbar({
   const savedSeenStorageKey = `saved-courses-seen:${user.id}`;
 
   const searchRouteByRole: Record<UserRole, string> = {
-    STUDENT: "/student/catalog",
-    INSTRUCTOR: "/instructor/courses",
-    ORG_ADMIN: "/org/courses",
+    USER: "/student/catalog",
+    COMPANY: "/org/courses",
     SUPER_ADMIN: "/admin/users",
   };
 
@@ -270,7 +269,7 @@ export function DashboardTopbar({
         </button>
 
         {/* ── Saved courses (students only) ─────────────────── */}
-        {user.role === "STUDENT" && (
+        {user.role === "USER" && (
           <div className="relative" ref={savedRef}>
             <button
               onClick={openSavedCourses}

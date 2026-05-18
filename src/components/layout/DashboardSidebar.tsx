@@ -50,7 +50,7 @@ interface NavItem {
 const exactMatchOnlyHrefs = new Set(["/student", "/instructor", "/org", "/admin"]);
 
 const navConfig: Record<UserRole, NavItem[]> = {
-  STUDENT: [
+  USER: [
     { labelKey: "nav.overview", href: "/student", icon: LayoutDashboard },
     { labelKey: "nav.lessons", href: "/student/courses", icon: BookOpen },
     { labelKey: "nav.catalog", href: "/student/catalog", icon: GraduationCap },
@@ -61,14 +61,7 @@ const navConfig: Record<UserRole, NavItem[]> = {
     { labelKey: "nav.peerReview", href: "/student/peer-review", icon: GitMerge },
     { labelKey: "nav.settings", href: "/student/settings", icon: Settings },
   ],
-  INSTRUCTOR: [
-    { labelKey: "nav.dashboard", href: "/instructor", icon: LayoutDashboard },
-    { labelKey: "nav.myCourses", href: "/instructor/courses", icon: BookMarked },
-    { labelKey: "nav.students", href: "/instructor/students", icon: Users },
-    { labelKey: "nav.analytics", href: "/instructor/analytics", icon: BarChart3 },
-    { labelKey: "nav.settings", href: "/instructor/settings", icon: Settings },
-  ],
-  ORG_ADMIN: [
+  COMPANY: [
     { labelKey: "nav.dashboard", href: "/org", icon: LayoutDashboard },
     { labelKey: "nav.members", href: "/org/members", icon: Users },
     { labelKey: "nav.courses", href: "/org/courses", icon: BookOpen },
@@ -91,9 +84,8 @@ const navConfig: Record<UserRole, NavItem[]> = {
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
-  STUDENT: "User",
-  INSTRUCTOR: "Company",
-  ORG_ADMIN: "Company",
+  USER: "User",
+  COMPANY: "Company",
   SUPER_ADMIN: "Super admin",
 };
 
@@ -123,7 +115,7 @@ export function DashboardSidebar({
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const { mobileOpen, closeSidebar } = useMobileSidebar();
-  const items = navConfig[role];
+  const items = navConfig[role] ?? navConfig.USER;
   const isPremium = isUpgradedStudentPlan(subscriptionPlan);
   const isItemActive = (href: string) =>
     pathname === href || (!exactMatchOnlyHrefs.has(href) && pathname.startsWith(`${href}/`));
@@ -319,7 +311,7 @@ export function DashboardSidebar({
         })}
       </nav>
 
-      {role === "STUDENT" && !isPremium && !collapsed && (
+      {role === "USER" && !isPremium && !collapsed && (
         <div className="mx-3 mb-3 mt-2 shrink-0">
           <div
             className="relative overflow-hidden rounded-2xl p-3"
@@ -347,7 +339,7 @@ export function DashboardSidebar({
         </div>
       )}
 
-      {role === "STUDENT" && !isPremium && collapsed && (
+      {role === "USER" && !isPremium && collapsed && (
         <div className="mb-2 mt-2 flex justify-center px-2">
           <Link
             href="/student/upgrade"

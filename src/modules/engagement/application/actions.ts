@@ -283,7 +283,7 @@ export async function globalSearch(query: string) {
     }),
     db.user.findMany({
       where: {
-        role: { in: ["INSTRUCTOR", "ORG_ADMIN"] },
+        role: { in: ["COMPANY", "COMPANY"] },
         status: "ACTIVE",
         name: { contains: q, mode: "insensitive" },
       },

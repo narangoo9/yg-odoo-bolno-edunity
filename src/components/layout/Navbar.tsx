@@ -11,10 +11,11 @@ import { useMounted } from "@/lib/use-mounted";
 
 const NAV_LINKS = [
   { label: "Нүүр", href: "/" },
-  { label: "Онцлог", href: "/#features" },
   { label: "Сургалтууд", href: "/courses" },
+  { label: "Компаниуд", href: "/companies" },
   { label: "Үнэ", href: "/pricing" },
-  { label: "Үйл явц", href: "/#how-it-works" },
+  { label: "Тухай", href: "/about" },
+  { label: "FAQ", href: "/faq" },
 ];
 
 export function Navbar() {
@@ -25,8 +26,7 @@ export function Navbar() {
 
   const dashboardHref =
     session?.user.role === "SUPER_ADMIN" ? "/admin"
-    : session?.user.role === "INSTRUCTOR" ? "/instructor"
-    : session?.user.role === "ORG_ADMIN" ? "/org"
+    : session?.user.role === "COMPANY" ? "/org"
     : "/student";
 
   const isDarkTheme = mounted && resolvedTheme === "dark";

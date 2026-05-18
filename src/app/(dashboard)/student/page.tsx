@@ -22,6 +22,7 @@ import { MascotImage, type MascotVariant } from "@/components/brand/MascotImage"
 import { hasActiveCourseAccess } from "@/lib/subscription-access";
 import { LearningArtwork } from "@/components/course/LearningArtwork";
 import { HeroBanner } from "@/components/dashboard/HeroBanner";
+import { LearningJourneyCard } from "@/components/student/LearningJourneyCard";
 import { getStripe } from "@/lib/stripe";
 import { syncLatestStripeSubscriptionForUser } from "@/lib/stripe/subscription-sync";
 import { dashboardCacheTags } from "@/lib/dashboard-cache";
@@ -138,11 +139,10 @@ export default async function StudentDashboardPage({ searchParams }: PageProps) 
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  if (session.user.role !== "STUDENT") {
+  if (session.user.role !== "USER") {
     const roleMap: Record<string, string> = {
       SUPER_ADMIN: "/admin",
-      ORG_ADMIN: "/org",
-      INSTRUCTOR: "/instructor",
+      COMPANY: "/org",
     };
     redirect(roleMap[session.user.role] ?? "/student");
   }
@@ -242,6 +242,21 @@ export default async function StudentDashboardPage({ searchParams }: PageProps) 
         completed={stats.completedCourses}
         enrolled={stats.enrolledCourses}
         certificates={stats.certificates}
+      />
+
+      <LearningJourneyCard
+        stats={{
+          enrolledCourses: stats.enrolledCourses,
+          completedLessons: stats.completedLessons,
+          completedCourses: stats.completedCourses,
+          certificates: stats.certificates,
+          quizAttempts: stats.quizAttempts,
+        }}
+        continueHref={
+          inProgress[0]
+            ? `/student/courses/${inProgress[0].course.id}/learn`
+            : null
+        }
       />
 
       {/* ── STATS CARDS ── */}
