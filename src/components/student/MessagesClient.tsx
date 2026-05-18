@@ -17,6 +17,7 @@ import {
 } from "@/components/chat/ChatConnectionStatus";
 import {
   createSupabaseRealtimeClient,
+  isSupabaseRealtimeConfigured,
   type ChatMessageRow,
 } from "@/lib/supabase/client";
 
@@ -466,6 +467,14 @@ export function MessagesClient({
         }
 
         const supabase = createSupabaseRealtimeClient();
+        if (!supabase) {
+          setConnectionState("connected");
+          if (!isSupabaseRealtimeConfigured()) {
+            setChatError(null);
+          }
+          return;
+        }
+
         channel = supabase
           .channel(`conversation:${conversationId}`, {
             config: {
