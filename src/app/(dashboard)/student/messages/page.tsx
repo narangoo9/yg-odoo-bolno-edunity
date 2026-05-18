@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { MessagesClient } from "@/components/student/MessagesClient";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { ensureCourseConversation } from "@/lib/chat/course-chat";
 import { toChatUuid } from "@/lib/supabase/chat-identity";
 
 export const metadata: Metadata = { title: "Мессеж" };
@@ -62,41 +62,19 @@ export default async function MessagesPage() {
     },
   }));
 
-  const supabase = getSupabaseAdminClient();
-  if (supabase && enrollmentsWithChat.length > 0) {
-    const conversations = enrollmentsWithChat.map(({ course }) => ({
-      id: course.chatConversationId,
-      kind: "course",
-      course_id: course.id,
-      title: course.title,
-      created_by: toChatUuid(course.instructor.id),
-    }));
-    await supabase.from("conversations").upsert(conversations, { onConflict: "id" });
-
-    const members = new Map<string, { conversation_id: string; user_id: string; role: string }>();
-    enrollmentsWithChat.forEach(({ course }) => {
-      members.set(`${course.chatConversationId}:${currentChatUserId}`, {
-        conversation_id: course.chatConversationId,
-        user_id: currentChatUserId,
-        role: "member",
-      });
-      members.set(`${course.chatConversationId}:${course.instructor.chatUserId}`, {
-        conversation_id: course.chatConversationId,
-        user_id: course.instructor.chatUserId,
-        role: "instructor",
-      });
-      course.enrollments.forEach(({ student }) => {
-        members.set(`${course.chatConversationId}:${student.chatUserId}`, {
-          conversation_id: course.chatConversationId,
-          user_id: student.chatUserId,
-          role: "member",
-        });
-      });
-    });
-    await supabase.from("conversation_members").upsert(Array.from(members.values()), {
-      onConflict: "conversation_id,user_id",
-    });
-  }
+  await Promise.all(
+    enrollmentsWithChat.map(({ course }) =>
+      ensureCourseConversation({
+        conversationId: course.chatConversationId,
+        courseId: course.id,
+        title: course.title,
+        instructorUserId: course.instructor.id,
+        memberChatUserIds: course.enrollments.map(({ student }) => student.chatUserId),
+        currentChatUserId,
+        currentRole: "member",
+      }),
+    ),
+  ).catch(() => undefined);
 
   return (
     <MessagesClient

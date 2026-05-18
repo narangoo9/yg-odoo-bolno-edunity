@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  createCourseChatMessage,
+  ensureCourseConversation,
+  listCourseChatMessages,
+} from "@/lib/chat/course-chat";
 import { toChatUuid } from "@/lib/supabase/chat-identity";
-
-const messageSelect = "id, conversation_id, sender_id, content, created_at, read_at";
 
 const querySchema = z.object({
   conversationId: z.string().uuid(),
@@ -36,6 +38,11 @@ async function canAccessCourse(courseId: string, userId: string) {
         title: true,
         instructorId: true,
         instructor: { select: { id: true } },
+        enrollments: {
+          where: { status: { in: ["ACTIVE", "COMPLETED"] } },
+          select: { studentId: true },
+          take: 50,
+        },
       },
     }),
   ]);
@@ -65,28 +72,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const supabase = getSupabaseAdminClient();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 500 });
+  try {
+    const messages = await listCourseChatMessages(
+      parsed.data.conversationId,
+      parsed.data.after,
+    );
+    return NextResponse.json({ messages });
+  } catch (error) {
+    console.error("GET /api/v1/messages error:", error);
+    return NextResponse.json({ error: "Unable to load messages" }, { status: 500 });
   }
-
-  let query = supabase
-    .from("messages")
-    .select(messageSelect)
-    .eq("conversation_id", parsed.data.conversationId)
-    .order("created_at", { ascending: true })
-    .limit(200);
-
-  if (parsed.data.after) {
-    query = query.gt("created_at", parsed.data.after);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ messages: data ?? [] });
 }
 
 export async function POST(req: NextRequest) {
@@ -105,44 +100,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const supabase = getSupabaseAdminClient();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 500 });
-  }
-
   const chatUserId = toChatUuid(session.user.id);
-  await supabase.from("conversations").upsert(
-    {
-      id: parsed.data.conversationId,
-      kind: "course",
-      course_id: course.id,
+
+  try {
+    await ensureCourseConversation({
+      conversationId: parsed.data.conversationId,
+      courseId: course.id,
       title: course.title,
-      created_by: toChatUuid(course.instructor.id),
-    },
-    { onConflict: "id" },
-  );
-  await supabase.from("conversation_members").upsert(
-    {
-      conversation_id: parsed.data.conversationId,
-      user_id: chatUserId,
-      role: course.instructorId === session.user.id ? "instructor" : "member",
-    },
-    { onConflict: "conversation_id,user_id" },
-  );
+      instructorUserId: course.instructor.id,
+      memberChatUserIds: course.enrollments.map(enrollment => toChatUuid(enrollment.studentId)),
+      currentChatUserId: chatUserId,
+      currentRole: course.instructorId === session.user.id ? "instructor" : "member",
+    });
 
-  const { data, error } = await supabase
-    .from("messages")
-    .insert({
-      conversation_id: parsed.data.conversationId,
-      sender_id: chatUserId,
+    const message = await createCourseChatMessage({
+      conversationId: parsed.data.conversationId,
+      senderChatUserId: chatUserId,
       content: parsed.data.content,
-    })
-    .select(messageSelect)
-    .single();
+    });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ message });
+  } catch (error) {
+    console.error("POST /api/v1/messages error:", error);
+    return NextResponse.json({ error: "Unable to send message" }, { status: 500 });
   }
-
-  return NextResponse.json({ message: data });
 }

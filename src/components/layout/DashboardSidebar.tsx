@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -113,7 +113,21 @@ export function DashboardSidebar({
   const { t } = useLanguage();
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
   const { mobileOpen, closeSidebar } = useMobileSidebar();
+
+  useEffect(() => {
+    if (!profileOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!profileRef.current?.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [profileOpen]);
   const items = navConfig[role] ?? navConfig.USER;
   const isPremium = isUpgradedStudentPlan(subscriptionPlan);
   const isItemActive = (href: string) =>
@@ -310,7 +324,7 @@ export function DashboardSidebar({
         })}
       </nav>
 
-      {role === "USER" && !isPremium && !collapsed && (
+      {role === "USER" && !isPremium && !collapsed && !profileOpen && (
         <div className="mx-3 mb-3 mt-2 shrink-0">
           <div
             className="relative overflow-hidden rounded-2xl p-3"
@@ -352,18 +366,35 @@ export function DashboardSidebar({
 
       {/* ── Profile section ──────────────────────────────────────────── */}
       <div
+        ref={profileRef}
         className={cn(
-          "animate-profile-in relative shrink-0 border-t border-violet-100 dark:border-violet-900/20",
+          "relative shrink-0 border-t border-violet-100 dark:border-violet-900/20",
           collapsed ? "px-2 py-2.5" : "px-3 py-2.5",
+          profileOpen && "z-50",
         )}
       >
-        {profileOpen && (
-          <div
-            className={cn(
-              "animate-dropdown absolute z-40 overflow-hidden rounded-2xl border border-violet-100 bg-white p-1.5 shadow-xl shadow-violet-200/70 dark:border-violet-800/40 dark:bg-[#13102a] dark:shadow-violet-950/50",
-              collapsed ? "bottom-2 left-full ml-2 w-44" : "bottom-full left-3 right-3 mb-2",
-            )}
-          >
+        {profileOpen && collapsed && (
+          <div className="absolute bottom-2 left-full z-50 ml-2 w-44 overflow-hidden rounded-2xl border border-violet-100 bg-white p-1.5 shadow-xl shadow-violet-200/70 dark:border-violet-800/40 dark:bg-[#13102a] dark:shadow-violet-950/50">
+            <Link
+              href={settingsRouteByRole[role]}
+              onClick={() => setProfileOpen(false)}
+              className="group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-bold text-foreground transition-colors hover:bg-violet-50 hover:text-violet-700 dark:hover:bg-violet-900/25 dark:hover:text-violet-300"
+            >
+              <User size={14} className="text-violet-500" />
+              Profile
+            </Link>
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="group mt-0.5 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[12px] font-bold text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+            >
+              <LogOut size={14} />
+              Logout
+            </button>
+          </div>
+        )}
+
+        {profileOpen && !collapsed && (
+          <div className="mb-2 overflow-hidden rounded-2xl border border-violet-100 bg-white p-1.5 shadow-lg shadow-violet-200/50 dark:border-violet-800/40 dark:bg-[#13102a] dark:shadow-violet-950/40">
             <Link
               href={settingsRouteByRole[role]}
               onClick={() => setProfileOpen(false)}
