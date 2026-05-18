@@ -31,7 +31,7 @@ export function MongolianSpellTextarea({
   onApplyHint,
 }: Props) {
   const id = useId();
-  const { issues, loading, hasErrors, blockingIssues, normalizedHint, checkNow } =
+  const { issues, loading, hasErrors, normalizedHint, checkNow } =
     useMongolianSpellcheck(value, {
       enabled: !disabled,
       minLength: 6,

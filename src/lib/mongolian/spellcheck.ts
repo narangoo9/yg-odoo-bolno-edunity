@@ -104,12 +104,6 @@ function isMostlyLatin(word: string): boolean {
   return latin > 0 && cyr === 0;
 }
 
-function isMostlyCyrillic(word: string): boolean {
-  const letters = word.replace(/[^A-Za-z\u0400-\u04FF]/g, "");
-  if (!letters) return false;
-  return (letters.match(/[\u0400-\u04FF]/g) ?? []).length / letters.length >= 0.8;
-}
-
 function hasMixedScript(word: string): boolean {
   return LATIN_RE.test(word) && CYRILLIC_RE.test(word);
 }
