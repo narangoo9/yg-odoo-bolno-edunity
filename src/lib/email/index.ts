@@ -8,6 +8,7 @@ interface SendEmailOptions {
   template: string;
   data: Record<string, unknown>;
   attachments?: Attachment[];
+  replyTo?: string;
 }
 
 const transporter = nodemailer.createTransport({
@@ -138,6 +139,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
   await transporter.sendMail({
     from: env.smtpFrom ?? `"${env.appName}" <noreply@example.com>`,
     to: options.to,
+    replyTo: options.replyTo,
     subject: options.subject,
     html,
     text,

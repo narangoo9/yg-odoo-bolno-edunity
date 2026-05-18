@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PublicPageShell } from "@/components/layout/PublicPageShell";
 import { SupportContactForm } from "@/components/layout/SupportContactForm";
+import { env } from "@/lib/env";
 
 export const metadata: Metadata = { title: "Дэмжлэг — EduNity" };
 
@@ -31,8 +32,11 @@ export default function SupportPage() {
 
       <p className="mb-4 text-sm text-[#6B7280] dark:text-[#A1A1AA]">
         Имэйл:{" "}
-        <a href="mailto:support@edunity.mn" className="font-semibold text-violet-600 dark:text-violet-400">
-          support@edunity.mn
+        <a
+          href={`mailto:${env.supportEmail}`}
+          className="font-semibold text-violet-600 dark:text-violet-400"
+        >
+          {env.supportEmail}
         </a>
       </p>
 

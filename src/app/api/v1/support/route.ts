@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sendEmail } from "@/lib/email";
+import { env } from "@/lib/env";
 const supportSchema = z.object({
   name: z.string().min(1).max(120),
   email: z.string().email().max(200),
@@ -21,10 +22,9 @@ export async function POST(request: Request) {
     }
 
     const { name, email, topic, message } = parsed.data;
-    const supportInbox = process.env.SUPPORT_EMAIL ?? "support@edunity.mn";
-
     await sendEmail({
-      to: supportInbox,
+      to: env.supportEmail,
+      replyTo: email,
       subject: `[EduNity Support] ${topic} — ${name}`,
       template: "support-request",
       data: { name, email, topic, message },
