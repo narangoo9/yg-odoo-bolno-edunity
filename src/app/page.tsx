@@ -17,11 +17,11 @@ import { MascotImage, type MascotVariant } from "@/components/brand/MascotImage"
 import { auth } from "@/lib/auth";
 import { BILLING_TIERS, formatTierPrice } from "@/lib/pricing/billing-plans";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 const getCachedHomeCourses = unstable_cache(
-  () => getCourses({ limit: 6, sortBy: "popular" }).catch(() => null),
-  ["home-popular-courses"],
+  () => getCourses({ limit: 6, sortBy: "popular" }),
+  ["home-popular-courses-v2"],
   { revalidate: 120, tags: ["courses:popular"] },
 );
 
@@ -49,7 +49,7 @@ export default async function HomePage() {
     redirect("/dashboard");
   }
   const [courseListing, stats] = await Promise.all([
-    getCachedHomeCourses(),
+    getCachedHomeCourses().catch(() => null),
     getCachedHomeStats(),
   ]);
   const courses = courseListing?.courses ?? [];

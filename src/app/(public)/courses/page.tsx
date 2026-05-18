@@ -7,7 +7,7 @@ import { formatDuration } from "@/lib/utils";
 import { Navbar } from "@/components/layout/Navbar";
 import { LearningArtwork } from "@/components/course/LearningArtwork";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Курсууд" };
 
